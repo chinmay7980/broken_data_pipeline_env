@@ -1,8 +1,8 @@
 """
-Pydantic models for the Broken Data Pipeline Fixer environment.
+Pydantic models for the Broken Data Pipeline Fixer.
 
-Defines the wire-format types for Action, Observation, and State
-used across the FastAPI server, client, and inference script.
+These models define the API contracts for observations, actions,
+state, and request/response types used by the FastAPI server.
 """
 
 from __future__ import annotations
@@ -12,114 +12,68 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
-class PipelineAction(BaseModel):
-    """An action the agent can take to repair the pipeline.
-
-    Attributes
-    ----------
-    action : str
-        One of: ``"add_validate"``, ``"fix_order"``, ``"remove_invalid"``.
-    task_id : str | None
-        Optional task identifier for multi-task episodes.
-    """
-
-    action: str = Field(
-        ...,
-        description="Repair action: 'add_validate', 'fix_order', or 'remove_invalid'",
-    )
-    task_id: Optional[str] = Field(
-        default=None,
-        description="Optional task ID (easy / medium / hard)",
-    )
+# ──────────────────────────────────────────────────────────────────────
+# Pipeline Step Detail
+# ──────────────────────────────────────────────────────────────────────
 
 
-class PipelineObservation(BaseModel):
-    """What the agent observes after taking an action.
+class PipelineStepDetail(BaseModel):
+    """A single step in the pipeline with its execution status."""
 
-    Attributes
-    ----------
-    pipeline : list[str]
-        Current state of the pipeline (ordered list of step names).
-    reward : float
-        Scalar reward for the last action.
-    done : bool
-        Whether the episode has ended.
-    info : dict
-        Debug / diagnostic metadata (detected issue, fix applied, etc.).
-    """
-
-    pipeline: List[str] = Field(
-        ..., description="Current pipeline state"
-    )
-    reward: float = Field(
-        0.0, description="Reward for the last action"
-    )
-    done: bool = Field(
-        False, description="Whether the episode is finished"
-    )
-    info: Dict[str, Any] = Field(
-        default_factory=dict, description="Diagnostic metadata"
-    )
+    step: int
+    op: str
+    params: Dict[str, Any] = Field(default_factory=dict)
+    status: str = "pending"  # "ok", "error", "pending"
+    error: Optional[str] = None
 
 
-class PipelineState(BaseModel):
-    """Full internal state of the environment (for OpenEnv ``state()``).
-
-    Attributes
-    ----------
-    episode_id : str
-        Unique identifier for the current episode.
-    task_id : str
-        Which task is loaded (easy / medium / hard).
-    step_count : int
-        Number of steps taken so far.
-    max_steps : int
-        Step budget for the episode.
-    current_pipeline : list[str]
-        Current pipeline state.
-    original_pipeline : list[str]
-        The broken pipeline at episode start.
-    done : bool
-        Whether the episode is finished.
-    """
-
-    episode_id: str = Field("", description="Unique episode identifier")
-    task_id: str = Field("easy", description="Task difficulty level")
-    step_count: int = Field(0, description="Steps taken so far")
-    max_steps: int = Field(10, description="Step budget")
-    current_pipeline: List[str] = Field(
-        default_factory=list, description="Current pipeline"
-    )
-    original_pipeline: List[str] = Field(
-        default_factory=list, description="Initial broken pipeline"
-    )
-    done: bool = Field(False, description="Episode finished?")
+# ──────────────────────────────────────────────────────────────────────
+# API Request / Response Models
+# ──────────────────────────────────────────────────────────────────────
 
 
 class ResetRequest(BaseModel):
-    """Request body for the ``/reset`` endpoint."""
+    """Body for POST /reset."""
 
-    task_id: str = Field(
-        "easy",
-        description="Task to load: 'easy', 'medium', or 'hard'",
-    )
-    seed: Optional[int] = Field(
-        default=None, description="Optional random seed (unused, deterministic env)"
-    )
+    task_id: str = "easy"
+    seed: Optional[int] = None
 
 
 class StepRequest(BaseModel):
-    """Request body for the ``/step`` endpoint."""
+    """Body for POST /step."""
 
-    action: str = Field(
-        ...,
-        description="Repair action: 'add_validate', 'fix_order', or 'remove_invalid'",
-    )
+    action: str
+
+
+class PipelineObservation(BaseModel):
+    """Observation returned by reset() and step()."""
+
+    pipeline: List[Dict[str, Any]]
+    error: Optional[str] = None
+    schema_state: Dict[str, str] = Field(default_factory=dict)
+    issues_remaining: int = 0
+    reward: float = 0.0
+    done: bool = False
+    info: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PipelineState(BaseModel):
+    """Internal state returned by GET /state."""
+
+    episode_id: str = ""
+    task_id: str = "easy"
+    step_count: int = 0
+    max_steps: int = 10
+    current_pipeline: List[Dict[str, Any]] = Field(default_factory=list)
+    original_pipeline: List[Dict[str, Any]] = Field(default_factory=list)
+    schema_state: Dict[str, str] = Field(default_factory=dict)
+    issues_remaining: int = 0
+    done: bool = False
 
 
 class HealthResponse(BaseModel):
-    """Response for the ``/health`` endpoint."""
+    """Response for GET /health."""
 
     status: str = "ok"
     environment: str = "broken_pipeline_fixer"
-    version: str = "1.0.0"
+    version: str = "2.0.0"

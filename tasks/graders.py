@@ -1,158 +1,100 @@
 """
-Deterministic graders for the Broken Data Pipeline Fixer.
+Deterministic graders for the dynamic pipeline environment.
 
-Each grader produces a score between 0.0 and 1.0 for a completed episode.
-Scoring is based on:
-  - Pipeline correctness  (40%)
-  - Step efficiency        (30%)
-  - Order violations fixed (15%)
-  - Missing steps resolved (15%)
-
-All graders are deterministic: same inputs → same score.
+Scores 0.0–1.0 based on:
+  - Pipeline correctness  (40%)  — does it run and match the correct pipeline?
+  - Step efficiency        (30%)  — how close to optimal step count?
+  - Issues resolved        (15%)  — fraction of original issues fixed.
+  - Error-free execution   (15%)  — does the pipeline run without errors?
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from core.rules import (
-    CORRECT_PIPELINE,
-    check_missing_steps,
-    check_order_violations,
-    validate_pipeline,
-)
+from core.rules import count_issues, run_pipeline
 
 
 def grade_episode(
     task_id: str,
-    final_pipeline: List[str],
+    final_pipeline: List[Dict],
+    correct_pipeline: List[Dict],
+    initial_schema: Dict[str, str],
     steps_taken: int,
     max_steps: int,
+    initial_issues: int,
 ) -> float:
-    """Compute a deterministic score in [0.0, 1.0] for a completed episode.
+    """Compute a deterministic score in [0.0, 1.0]."""
 
-    Parameters
-    ----------
-    task_id : str
-        The task difficulty ('easy', 'medium', 'hard').
-    final_pipeline : list[str]
-        Pipeline state when the episode ended.
-    steps_taken : int
-        Total actions the agent executed.
-    max_steps : int
-        Episode step budget.
-
-    Returns
-    -------
-    float
-        Score between 0.0 (total failure) and 1.0 (perfect).
-    """
-    correctness = _score_correctness(final_pipeline)
+    correctness = _score_correctness(final_pipeline, correct_pipeline)
     efficiency = _score_efficiency(steps_taken, max_steps, task_id)
-    order = _score_order(final_pipeline)
-    completeness = _score_completeness(final_pipeline)
+    issues_resolved = _score_issues_resolved(
+        final_pipeline, correct_pipeline, initial_schema, initial_issues
+    )
+    execution = _score_execution(final_pipeline, initial_schema)
 
-    # Weighted combination
     score = (
         0.40 * correctness
         + 0.30 * efficiency
-        + 0.15 * order
-        + 0.15 * completeness
+        + 0.15 * issues_resolved
+        + 0.15 * execution
     )
 
     return round(min(max(score, 0.0), 1.0), 4)
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Component scorers
-# ──────────────────────────────────────────────────────────────────────
+def _score_correctness(final: List[Dict], correct: List[Dict]) -> float:
+    """1.0 if pipeline matches correct, partial credit otherwise."""
+    if len(final) != len(correct):
+        # Partial credit based on matching ops in order
+        matches = 0
+        for i, step in enumerate(correct):
+            if i < len(final) and final[i].get("op") == step.get("op"):
+                if final[i].get("params") == step.get("params"):
+                    matches += 1
+                else:
+                    matches += 0.5  # Right op, wrong params
+        return matches / max(len(correct), 1)
 
-
-def _score_correctness(pipeline: List[str]) -> float:
-    """1.0 if pipeline matches canonical, else fraction of correct positions."""
-    if pipeline == CORRECT_PIPELINE:
-        return 1.0
-
-    if not pipeline:
-        return 0.0
-
-    # Partial credit: what fraction of the correct pipeline is matched?
-    max_len = max(len(pipeline), len(CORRECT_PIPELINE))
-    matches = sum(
-        1
-        for i, step in enumerate(CORRECT_PIPELINE)
-        if i < len(pipeline) and pipeline[i] == step
-    )
-    return matches / max_len
+    matches = 0
+    for a, b in zip(final, correct):
+        if a.get("op") == b.get("op") and a.get("params") == b.get("params"):
+            matches += 1
+        elif a.get("op") == b.get("op"):
+            matches += 0.5
+    return matches / max(len(correct), 1)
 
 
 def _score_efficiency(steps_taken: int, max_steps: int, task_id: str) -> float:
-    """Reward fewer steps. Optimal steps per difficulty level."""
-    optimal = _optimal_steps(task_id)
+    """Reward fewer steps."""
+    optimal = {"easy": 2, "medium": 4, "hard": 6}.get(task_id, 4)
     if steps_taken <= 0:
         return 0.0
     if steps_taken <= optimal:
         return 1.0
-    # Linear decay from 1.0 → 0.0 as steps approach max_steps
-    remaining_budget = max_steps - optimal
-    if remaining_budget <= 0:
+    remaining = max_steps - optimal
+    if remaining <= 0:
         return 1.0
     overshoot = steps_taken - optimal
-    return max(1.0 - (overshoot / remaining_budget), 0.0)
+    return max(1.0 - (overshoot / remaining), 0.0)
 
 
-def _score_order(pipeline: List[str]) -> float:
-    """1.0 if no order violations, decreasing with violations."""
-    violations = check_order_violations(pipeline)
-    if not violations:
+def _score_issues_resolved(
+    final: List[Dict],
+    correct: List[Dict],
+    schema: Dict[str, str],
+    initial_issues: int,
+) -> float:
+    """1.0 if all issues resolved."""
+    if initial_issues <= 0:
         return 1.0
-    # Each violation costs a fraction
-    total_deps = len(pipeline) - 1 if len(pipeline) > 1 else 1
-    return max(1.0 - (len(violations) / total_deps), 0.0)
+    current = count_issues(final, schema, correct)
+    remaining = current["total"]
+    resolved = max(initial_issues - remaining, 0)
+    return resolved / initial_issues
 
 
-def _score_completeness(pipeline: List[str]) -> float:
-    """1.0 if no missing steps, decreasing with each missing step."""
-    missing = check_missing_steps(pipeline)
-    if not missing:
-        return 1.0
-    return max(1.0 - (len(missing) / len(CORRECT_PIPELINE)), 0.0)
-
-
-def _optimal_steps(task_id: str) -> int:
-    """Return the minimum number of steps to solve each task.
-
-    Easy:   1 step  (add_validate)
-    Medium: 2 steps (fix_order + add_validate)
-    Hard:   2 steps (fix_order + add_validate)
-    """
-    return {"easy": 1, "medium": 2, "hard": 2}.get(task_id, 2)
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Convenience
-# ──────────────────────────────────────────────────────────────────────
-
-
-def grade_all_tasks(results: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
-    """Grade multiple task results at once.
-
-    Parameters
-    ----------
-    results : dict
-        Mapping of task_id → {final_pipeline, steps_taken, max_steps}.
-
-    Returns
-    -------
-    dict
-        Mapping of task_id → score.
-    """
-    scores = {}
-    for task_id, data in results.items():
-        scores[task_id] = grade_episode(
-            task_id=task_id,
-            final_pipeline=data["final_pipeline"],
-            steps_taken=data["steps_taken"],
-            max_steps=data["max_steps"],
-        )
-    return scores
+def _score_execution(final: List[Dict], schema: Dict[str, str]) -> float:
+    """1.0 if the pipeline runs without errors."""
+    success, *_ = run_pipeline(final, schema)
+    return 1.0 if success else 0.0
