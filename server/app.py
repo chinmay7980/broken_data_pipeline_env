@@ -20,14 +20,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from typing import Any, Dict
+
 from models import (
     HealthResponse,
     PipelineObservation,
     PipelineState,
     ResetRequest,
     StepRequest,
+    CustomPipelineRequest,
+    RawCodeRequest,
+    RawCodeResponse,
+    CodeGenRequest,
 )
 from server.pipeline_environment import PipelineEnvironment
+from agent import PipelineFixerAgent
+from server.parsers import parse_code_to_pipeline, generate_code_from_pipeline
+
+_ACTIVE_AGENTS = {}
 
 # ──────────────────────────────────────────────────────────────────────
 # App setup
@@ -129,6 +139,59 @@ async def step(request: StepRequest) -> PipelineObservation:
 async def state() -> PipelineState:
     """Return the current internal state of the environment."""
     return env.state
+
+
+@app.get("/agent/next_action")
+async def agent_next_action() -> Dict[str, str]:
+    """Ask the loaded LLM agent for the next action to fix the pipeline."""
+    from tasks.tasks import get_task_data
+    
+    task_id = env.state.task_id
+    if not task_id:
+        raise HTTPException(status_code=400, detail="No active episode.")
+
+    if task_id not in _ACTIVE_AGENTS:
+        task_data = get_task_data(task_id)
+        _ACTIVE_AGENTS[task_id] = PipelineFixerAgent(correct_pipeline=task_data["correct_pipeline"])
+
+    agent = _ACTIVE_AGENTS[task_id]
+    
+    # We reconstruct the observation exactly like reset()/step() returns it
+    obs = {
+        "pipeline": env.state.current_pipeline,
+        "error": env.state.current_pipeline[-1].get("error") if env.state.current_pipeline else None,
+        "schema_state": env.state.schema_state,
+        "issues_remaining": env.state.issues_remaining,
+        "max_steps": env.state.max_steps
+    }
+    
+    # We don't have perfect tracking of last_info across REST API inherently, 
+    # but the agent can figure it out from current_pipeline and issues_remaining
+    action = agent.get_action(obs, env.state.step_count)
+    return {"action": action}
+
+
+@app.post("/parse_to_pipeline", response_model=RawCodeResponse)
+async def parse_to_pipeline(request: RawCodeRequest) -> RawCodeResponse:
+    """Uses LLM to convert raw python/sql code to pipeline JSON format."""
+    try:
+        parsed = parse_code_to_pipeline(request.code)
+        return RawCodeResponse(
+            initial_schema=parsed.get("initial_schema", {}),
+            pipeline=parsed.get("pipeline", [])
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM parsing failed: {str(e)}")
+
+
+@app.post("/generate_code")
+async def generate_code(request: CodeGenRequest) -> Dict[str, str]:
+    """Uses LLM to convert fixed pipeline JSON back into executable python/sql code."""
+    try:
+        code = generate_code_from_pipeline(request.pipeline, request.language)
+        return {"code": code}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM code gen failed: {str(e)}")
 
 
 # ──────────────────────────────────────────────────────────────────────

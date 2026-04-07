@@ -54,6 +54,24 @@ class CustomPipelineRequest(BaseModel):
     max_steps: int = 15
 
 
+class RawCodeRequest(BaseModel):
+    """Body for POST /parse_to_pipeline."""
+    code: str
+    language: str = "python"
+
+
+class RawCodeResponse(BaseModel):
+    """Response containing parsed components."""
+    initial_schema: Dict[str, str]
+    pipeline: List[Dict[str, Any]]
+
+
+class CodeGenRequest(BaseModel):
+    """Body for POST /generate_code."""
+    pipeline: List[Dict[str, Any]]
+    language: str = "python"
+
+
 class PipelineObservation(BaseModel):
     """Observation returned by reset() and step()."""
 
