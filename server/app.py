@@ -13,8 +13,12 @@ Usage:
 
 from __future__ import annotations
 
+import pathlib
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from models import (
     HealthResponse,
@@ -49,32 +53,23 @@ app.add_middleware(
 # Single environment instance (per-worker)
 env = PipelineEnvironment()
 
+# Static files
+_STATIC_DIR = pathlib.Path(__file__).resolve().parent.parent / "static"
+if _STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
 # ──────────────────────────────────────────────────────────────────────
 # Endpoints
 # ──────────────────────────────────────────────────────────────────────
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """Root endpoint — environment info."""
-    return {
-        "environment": "broken_pipeline_fixer",
-        "version": "1.0.0",
-        "description": (
-            "An OpenEnv-compatible RL environment for learning to repair "
-            "broken data pipelines through sequential decision-making."
-        ),
-        "endpoints": {
-            "POST /reset": "Start a new episode (body: {task_id: easy|medium|hard})",
-            "POST /step": "Execute an action (body: {action: add_validate|fix_order|remove_invalid})",
-            "GET /state": "Get current environment state",
-            "GET /health": "Liveness check",
-            "GET /docs": "Interactive API documentation",
-        },
-        "tasks": ["easy", "medium", "hard"],
-        "actions": ["add_validate", "fix_order", "remove_invalid"],
-        "correct_pipeline": ["ingest", "clean", "transform", "validate", "store"],
-    }
+    """Serve the interactive UI."""
+    html_path = _STATIC_DIR / "index.html"
+    if html_path.exists():
+        return HTMLResponse(content=html_path.read_text(), status_code=200)
+    return HTMLResponse(content="<h1>Broken Data Pipeline Fixer</h1><p>Visit <a href='/docs'>/docs</a></p>")
 
 
 @app.get("/health", response_model=HealthResponse)
