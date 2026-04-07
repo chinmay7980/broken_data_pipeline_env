@@ -54,6 +54,29 @@ env = PipelineEnvironment()
 # ──────────────────────────────────────────────────────────────────────
 
 
+@app.get("/")
+async def root():
+    """Root endpoint — environment info."""
+    return {
+        "environment": "broken_pipeline_fixer",
+        "version": "1.0.0",
+        "description": (
+            "An OpenEnv-compatible RL environment for learning to repair "
+            "broken data pipelines through sequential decision-making."
+        ),
+        "endpoints": {
+            "POST /reset": "Start a new episode (body: {task_id: easy|medium|hard})",
+            "POST /step": "Execute an action (body: {action: add_validate|fix_order|remove_invalid})",
+            "GET /state": "Get current environment state",
+            "GET /health": "Liveness check",
+            "GET /docs": "Interactive API documentation",
+        },
+        "tasks": ["easy", "medium", "hard"],
+        "actions": ["add_validate", "fix_order", "remove_invalid"],
+        "correct_pipeline": ["ingest", "clean", "transform", "validate", "store"],
+    }
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     """Liveness / readiness check."""
