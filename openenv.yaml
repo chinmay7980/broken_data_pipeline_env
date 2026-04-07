@@ -1,0 +1,10 @@
+spec_version: 1
+name: broken_pipeline_fixer
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+version: "1.0.0"
+description: >
+  An OpenEnv-compatible RL environment for learning to repair
+  broken data pipelines through sequential decision-making.
