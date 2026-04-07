@@ -1,118 +1,88 @@
 #!/usr/bin/env python3
 """
-Baseline Inference Script — Broken Data Pipeline Fixer
+Inference Script — Broken Data Pipeline Fixer
+===================================
+MANDATORY ENVIRONMENT VARIABLES:
+    API_BASE_URL   The API endpoint for the LLM.
+    MODEL_NAME     The model identifier to use for inference.
+    HF_TOKEN       Your Hugging Face / API key.
 
-Runs all tasks (easy, medium, hard) with a deterministic action strategy,
-producing reproducible scores with the required logging format:
-  [START], [STEP], [END]
-
-Supports environment variables:
-  API_BASE_URL  — URL of the deployed server (optional; runs locally by default)
-  MODEL_NAME    — name of the agent/model (default: "deterministic_baseline")
-
-Usage:
-    python inference.py
+STDOUT FORMAT:
+    [START] task=<task_name> env=broken_pipeline_fixer model=<model_name>
+    [STEP]  step=<n> action=<action> reward=<0.00> done=<true|false> error=<msg|null>
+    [END]   success=<true|false> steps=<n> score=<0.00> rewards=<r1,r2,...,rn>
 """
 
-from __future__ import annotations
-
-import json
 import os
 import sys
-import time
-from typing import Any, Dict, List
+from typing import List
 
-# ── Local imports ─────────────────────────────────────────────────────
-from env.pipeline_env import DataPipelineEnv
-from tasks.tasks import get_broken_pipeline, get_task, list_tasks, get_correct_pipeline
+from openai import OpenAI
+
+from env.pipeline_env import DataPipelineEnv, VALID_ACTIONS
+from tasks.tasks import get_broken_pipeline, get_task, list_tasks
 from tasks.graders import grade_episode
+from core.rules import CORRECT_PIPELINE
 
-# ── Configuration ─────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────
+# Configuration
+# ──────────────────────────────────────────────────────────────────────
 
-MODEL_NAME = os.environ.get("MODEL_NAME", "deterministic_baseline")
-API_BASE_URL = os.environ.get("API_BASE_URL", "")
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+BENCHMARK = "broken_pipeline_fixer"
 
-# Deterministic action sequence that can solve all task variants
-ACTION_SEQUENCE: List[str] = [
-    "remove_invalid",
-    "fix_order",
-    "add_validate",
-    "fix_order",
-]
+# ──────────────────────────────────────────────────────────────────────
+# System prompt for the LLM agent
+# ──────────────────────────────────────────────────────────────────────
+
+SYSTEM_PROMPT = """\
+You are an expert data pipeline debugging agent. Your job is to fix broken data pipelines by choosing repair actions.
+
+CORRECT pipeline (in order): ingest → clean → transform → validate → store
+
+Dependency rules:
+- clean requires ingest
+- transform requires clean
+- validate requires transform
+- store requires validate
+
+Available actions (respond with EXACTLY one, nothing else):
+- fix_order     : Re-order existing steps to satisfy dependency rules
+- add_validate  : Insert any missing steps at their correct positions
+- remove_invalid: Remove steps that aren't part of the canonical pipeline
+
+Strategy:
+1. First remove any invalid/unknown steps (remove_invalid)
+2. Then fix the ordering of remaining steps (fix_order)
+3. Then add any missing steps (add_validate)
+4. If order is still wrong after adding, fix_order again
+
+IMPORTANT: Reply with ONLY the action name. No explanation, no punctuation, no quotes."""
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Logging helpers
+# Action parsing
 # ──────────────────────────────────────────────────────────────────────
 
 
-def log_start(task_id: str, task_info: dict, initial_state: list) -> None:
-    """Emit [START] log line."""
-    payload = {
-        "task_id": task_id,
-        "difficulty": task_info["difficulty"],
-        "description": task_info["description"],
-        "model": MODEL_NAME,
-        "initial_pipeline": initial_state,
-        "correct_pipeline": get_correct_pipeline(),
-        "timestamp": time.time(),
-    }
-    print(f"[START] {json.dumps(payload)}")
+def parse_action(response: str) -> str:
+    """Extract a valid action from the LLM response text."""
+    text = response.strip().lower().strip("'\"` \n\t")
 
+    # Direct match
+    for action in VALID_ACTIONS:
+        if text == action:
+            return action
 
-def log_step(
-    step_num: int,
-    action: str,
-    observation: list,
-    reward: float,
-    done: bool,
-    info: dict,
-) -> None:
-    """Emit [STEP] log line."""
-    payload = {
-        "step": step_num,
-        "action": action,
-        "observation": observation,
-        "reward": reward,
-        "done": done,
-        "info": {k: _serialise(v) for k, v in info.items()},
-    }
-    print(f"[STEP] {json.dumps(payload)}")
+    # Substring match (LLM may add extra words)
+    for action in VALID_ACTIONS:
+        if action in text:
+            return action
 
-
-def log_end(
-    task_id: str,
-    score: float,
-    steps_taken: int,
-    final_pipeline: list,
-    total_reward: float,
-    success: bool,
-) -> None:
-    """Emit [END] log line."""
-    payload = {
-        "task_id": task_id,
-        "score": score,
-        "steps_taken": steps_taken,
-        "final_pipeline": final_pipeline,
-        "total_reward": round(total_reward, 4),
-        "success": success,
-        "model": MODEL_NAME,
-        "timestamp": time.time(),
-    }
-    print(f"[END] {json.dumps(payload)}")
-
-
-def _serialise(obj: Any) -> Any:
-    """Make an object JSON-safe."""
-    if isinstance(obj, (list, tuple)):
-        return [_serialise(i) for i in obj]
-    if isinstance(obj, dict):
-        return {k: _serialise(v) for k, v in obj.items()}
-    try:
-        json.dumps(obj)
-        return obj
-    except (TypeError, ValueError):
-        return str(obj)
+    # Return raw (env will reject it with negative reward)
+    return text
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -120,62 +90,110 @@ def _serialise(obj: Any) -> Any:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def run_episode(task_id: str) -> Dict[str, Any]:
-    """Run a single episode for a task using the deterministic strategy.
+def run_task(task_id: str, client: OpenAI) -> float:
+    """Run one episode for a task using the LLM agent.
 
-    Returns a dict with episode results.
+    Returns the graded score (0.0–1.0).
     """
     task_info = get_task(task_id)
     broken = get_broken_pipeline(task_id)
     env = DataPipelineEnv(pipeline=broken, max_steps=10)
-
     state = env.reset()
-    log_start(task_id, task_info, state)
 
-    total_reward = 0.0
+    # ── [START] ───────────────────────────────────────────────────────
+    print(f"[START] task={task_id} env={BENCHMARK} model={MODEL_NAME}")
 
-    for i, action in enumerate(ACTION_SEQUENCE, start=1):
-        state, reward, done, info = env.step(action)
-        total_reward += reward
+    rewards: List[float] = []
+    steps = 0
+    success = False
+    score = 0.0
+    done = False
 
-        log_step(
-            step_num=i,
-            action=action,
-            observation=state,
-            reward=reward,
-            done=done,
-            info=info,
+    # Build initial conversation context
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+    ]
+
+    try:
+        while not done:
+            # Compose the observation message
+            user_msg = (
+                f"Current pipeline: {state}\n"
+                f"Correct pipeline: {list(CORRECT_PIPELINE)}\n"
+                f"Step {steps + 1} of {env.max_steps}. "
+                f"Which action do you take?"
+            )
+            messages.append({"role": "user", "content": user_msg})
+
+            # Ask LLM
+            completion = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                max_tokens=30,
+                temperature=0.0,
+            )
+            raw = completion.choices[0].message.content or ""
+            action = parse_action(raw)
+
+            # Keep conversation history
+            messages.append({"role": "assistant", "content": action})
+
+            # Execute in environment
+            state, reward, done, info = env.step(action)
+            steps += 1
+            rewards.append(reward)
+
+            # Determine error field
+            error = "null"
+            if action not in VALID_ACTIONS:
+                error = f"invalid_action:{action}"
+            elif not info.get("applied", True) and info.get("detail", "").startswith("Unknown"):
+                error = info.get("detail", "unknown_error").replace(" ", "_")
+
+            # ── [STEP] ───────────────────────────────────────────────
+            print(
+                f"[STEP] step={steps} action={action} "
+                f"reward={reward:.2f} done={'true' if done else 'false'} "
+                f"error={error}"
+            )
+
+            # Feed result back to LLM for next turn
+            result_msg = (
+                f"Pipeline is now: {state}. "
+                f"Reward: {reward:.2f}. Done: {done}."
+            )
+            messages.append({"role": "user", "content": result_msg})
+
+        # ── Grading ──────────────────────────────────────────────────
+        score = grade_episode(
+            task_id=task_id,
+            final_pipeline=state,
+            steps_taken=steps,
+            max_steps=env.max_steps,
         )
+        success = (state == CORRECT_PIPELINE)
 
-        if done:
-            break
+    except Exception as exc:
+        # Ensure we always emit at least one [STEP] on failure
+        if steps == 0:
+            print(
+                f"[STEP] step=1 action=error "
+                f"reward=0.00 done=true "
+                f"error={str(exc).replace(' ', '_')[:100]}"
+            )
+            steps = 1
+            rewards = [0.0]
+        score = 0.0
+        success = False
 
-    # Grade the episode
-    score = grade_episode(
-        task_id=task_id,
-        final_pipeline=state,
-        steps_taken=env.step_count,
-        max_steps=env.max_steps,
+    # ── [END] (always emitted) ────────────────────────────────────────
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards) if rewards else "0.00"
+    print(
+        f"[END] success={'true' if success else 'false'} "
+        f"steps={steps} score={score:.2f} rewards={rewards_str}"
     )
 
-    success = state == get_correct_pipeline()
-    log_end(
-        task_id=task_id,
-        score=score,
-        steps_taken=env.step_count,
-        final_pipeline=state,
-        total_reward=total_reward,
-        success=success,
-    )
-
-    return {
-        "task_id": task_id,
-        "score": score,
-        "steps_taken": env.step_count,
-        "final_pipeline": state,
-        "total_reward": total_reward,
-        "success": success,
-    }
+    return score
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -184,40 +202,24 @@ def run_episode(task_id: str) -> Dict[str, Any]:
 
 
 def main() -> None:
-    """Run all tasks and print summary."""
-    print("=" * 60)
-    print("  Broken Data Pipeline Fixer — Baseline Inference")
-    print(f"  Model: {MODEL_NAME}")
-    print("=" * 60)
-    print()
-
-    results: Dict[str, Dict[str, Any]] = {}
-
-    for task_id in list_tasks():
-        print(f"--- Task: {task_id.upper()} ---")
-        result = run_episode(task_id)
-        results[task_id] = result
-        print()
-
-    # ── Summary ───────────────────────────────────────────────────────
-    print("=" * 60)
-    print("  SUMMARY")
-    print("=" * 60)
-    print(f"  {'Task':<10} {'Score':>8} {'Steps':>7} {'Success':>9}")
-    print(f"  {'-'*10} {'-'*8} {'-'*7} {'-'*9}")
-
-    total_score = 0.0
-    for tid, res in results.items():
-        total_score += res["score"]
-        flag = "✅" if res["success"] else "❌"
+    if not API_KEY:
         print(
-            f"  {tid:<10} {res['score']:>8.4f} {res['steps_taken']:>7} {flag:>9}"
+            "ERROR: Set HF_TOKEN or API_KEY environment variable.",
+            file=sys.stderr,
         )
+        sys.exit(1)
 
-    avg_score = total_score / len(results) if results else 0.0
-    print(f"  {'-'*10} {'-'*8} {'-'*7} {'-'*9}")
-    print(f"  {'AVG':<10} {avg_score:>8.4f}")
-    print("=" * 60)
+    client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
+
+    scores = {}
+    for task_id in list_tasks():
+        scores[task_id] = run_task(task_id, client)
+
+    # Summary to stderr (does not interfere with log parsing)
+    avg = sum(scores.values()) / len(scores) if scores else 0.0
+    print(f"\n# Average score: {avg:.4f}", file=sys.stderr)
+    for tid, sc in scores.items():
+        print(f"#   {tid}: {sc:.4f}", file=sys.stderr)
 
 
 if __name__ == "__main__":

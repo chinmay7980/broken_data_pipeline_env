@@ -206,36 +206,38 @@ API_BASE_URL=https://Chinmay2005-broken-pipeline-fixer.hf.space python inference
 
 | Variable | Default | Description |
 |---|---|---|
-| `API_BASE_URL` | `http://localhost:8000` | URL of the deployed environment |
-| `MODEL_NAME` | `deterministic_baseline` | Name of the agent/model for logging |
-| `HF_TOKEN` | — | Hugging Face token for Space deployment |
+| `API_BASE_URL` | `https://router.huggingface.co/v1` | LLM API endpoint |
+| `MODEL_NAME` | `Qwen/Qwen2.5-72B-Instruct` | Model identifier for inference |
+| `HF_TOKEN` | — | Hugging Face API key (also used as `API_KEY`) |
 
 ---
 
 ## 📜 Logging Format
 
-The inference script produces structured logs:
+The inference script emits structured stdout logs:
 
 ```
-[START] {"task_id": "easy", "difficulty": 1, "model": "deterministic_baseline", ...}
-[STEP]  {"step": 1, "action": "remove_invalid", "observation": [...], "reward": -0.15, ...}
-[STEP]  {"step": 2, "action": "fix_order", "observation": [...], "reward": -0.15, ...}
-[STEP]  {"step": 3, "action": "add_validate", "observation": [...], "reward": 1.0, ...}
-[END]   {"task_id": "easy", "score": 0.8167, "steps_taken": 3, "success": true, ...}
+[START] task=easy env=broken_pipeline_fixer model=Qwen/Qwen2.5-72B-Instruct
+[STEP] step=1 action=remove_invalid reward=-0.15 done=false error=null
+[STEP] step=2 action=fix_order reward=-0.15 done=false error=null
+[STEP] step=3 action=add_validate reward=1.00 done=true error=null
+[END] success=true steps=3 score=0.93 rewards=-0.15,-0.15,1.00
 ```
 
 ---
 
 ## 📈 Baseline Scores
 
-Deterministic baseline agent results:
+LLM-based agent results (Qwen2.5-72B-Instruct, temperature=0.0):
 
 | Task | Score | Steps | Result |
 |---|---|---|---|
-| Easy | 0.9333 | 3 | ✅ |
-| Medium | 0.9625 | 3 | ✅ |
-| Hard | 0.9625 | 3 | ✅ |
-| **Average** | **0.9528** | — | — |
+| Easy | ~0.93 | 3 | ✅ |
+| Medium | ~0.96 | 3 | ✅ |
+| Hard | ~0.96 | 3 | ✅ |
+| **Average** | **~0.95** | — | — |
+
+> Scores may vary slightly depending on the model used. With `temperature=0.0`, results are reproducible for a given model.
 
 ---
 
