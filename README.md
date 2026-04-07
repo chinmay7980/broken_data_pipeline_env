@@ -1,3 +1,12 @@
+---
+title: Broken Data Pipeline Fixer
+emoji: 🔧
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 8000
+---
+
 # 🔧 Broken Data Pipeline Fixer
 
 An **OpenEnv-compatible reinforcement learning environment** that simulates broken data pipelines and lets an agent learn to repair them through sequential decision-making.
@@ -223,10 +232,10 @@ Deterministic baseline agent results:
 
 | Task | Score | Steps | Result |
 |---|---|---|---|
-| Easy | ~0.82 | 3 | ✅ |
-| Medium | ~0.87 | 3 | ✅ |
-| Hard | ~0.87 | 3 | ✅ |
-| **Average** | **~0.85** | — | — |
+| Easy | 0.9333 | 3 | ✅ |
+| Medium | 0.9625 | 3 | ✅ |
+| Hard | 0.9625 | 3 | ✅ |
+| **Average** | **0.9528** | — | — |
 
 ---
 
