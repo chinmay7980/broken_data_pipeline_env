@@ -45,6 +45,15 @@ class StepRequest(BaseModel):
     action: str
 
 
+class CustomPipelineRequest(BaseModel):
+    """Body for POST /upload_custom."""
+
+    initial_schema: Dict[str, str]
+    correct_pipeline: List[Dict[str, Any]]
+    broken_pipeline: List[Dict[str, Any]]
+    max_steps: int = 15
+
+
 class PipelineObservation(BaseModel):
     """Observation returned by reset() and step()."""
 

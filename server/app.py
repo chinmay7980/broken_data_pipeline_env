@@ -90,6 +90,26 @@ async def reset(request: ResetRequest = ResetRequest()) -> PipelineObservation:
         return obs
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/upload_custom")
+async def upload_custom(request: CustomPipelineRequest) -> Dict[str, str]:
+    """Upload a custom pipeline task."""
+    import uuid
+    from tasks.tasks import CUSTOM_TASKS
+    task_id = f"custom_{uuid.uuid4().hex[:8]}"
+    CUSTOM_TASKS[task_id] = {
+        "task_id": task_id,
+        "template": "custom",
+        "initial_schema": request.initial_schema,
+        "correct_pipeline": request.correct_pipeline,
+        "broken_pipeline": request.broken_pipeline,
+        "breaks_applied": [],
+        "max_steps": request.max_steps,
+    }
+    return {"task_id": task_id}
 
 
 @app.post("/step", response_model=PipelineObservation)

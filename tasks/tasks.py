@@ -248,6 +248,9 @@ TASK_CONFIGS = {
     },
 }
 
+# Temporary in-memory cache for custom uploaded tasks
+CUSTOM_TASKS: Dict[str, Dict[str, Any]] = {}
+
 
 def list_tasks() -> List[str]:
     """Return task IDs in order."""
@@ -256,6 +259,18 @@ def list_tasks() -> List[str]:
 
 def get_task(task_id: str) -> Dict[str, Any]:
     """Return task metadata."""
+    if task_id.startswith("custom_"):
+        if task_id not in CUSTOM_TASKS:
+            raise ValueError(f"Custom task {task_id} not found")
+        return {
+            "task_id": task_id,
+            "difficulty": 3,
+            "description": "Custom user-uploaded pipeline.",
+            "domain": "Custom",
+            "template_name": "Custom",
+            "max_steps": CUSTOM_TASKS[task_id].get("max_steps", 15),
+        }
+
     cfg = TASK_CONFIGS[task_id]
     tmpl = PIPELINE_TEMPLATES[cfg["template"]]
     return {
@@ -270,6 +285,11 @@ def get_task(task_id: str) -> Dict[str, Any]:
 
 def get_task_data(task_id: str) -> Dict[str, Any]:
     """Return the full task data: broken pipeline, correct pipeline, schema, breaks."""
+    if task_id.startswith("custom_"):
+        if task_id not in CUSTOM_TASKS:
+            raise ValueError(f"Custom task {task_id} not found")
+        return CUSTOM_TASKS[task_id]
+
     cfg = TASK_CONFIGS[task_id]
     tmpl = PIPELINE_TEMPLATES[cfg["template"]]
     correct = tmpl["correct_pipeline"]
