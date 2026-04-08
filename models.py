@@ -104,3 +104,30 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     environment: str = "broken_pipeline_fixer"
     version: str = "2.0.0"
+
+class RunPipelineRequest(BaseModel):
+    """Body for POST /run-pipeline headless endpoint."""
+    pipeline: List[Dict[str, Any]]
+    schema_def: Any = Field(..., alias="schema")
+    correct_pipeline: Optional[List[Dict[str, Any]]] = None
+
+class RunPipelineStepInfo(BaseModel):
+    """A single step result recorded during the run."""
+    step_number: int
+    action: str
+    reward: float
+    issue_detected: Optional[str] = None
+    fix_applied: Optional[str] = None
+    pipeline_state: List[Dict[str, Any]]
+
+class RunPipelineSummary(BaseModel):
+    """Summary metrics of the evaluation run."""
+    total_steps: int
+    total_reward: float
+    issues_fixed: int
+    success: bool
+
+class RunPipelineResponse(BaseModel):
+    """Response payload for POST /run-pipeline."""
+    steps: List[RunPipelineStepInfo]
+    summary: RunPipelineSummary

@@ -1,165 +1,181 @@
----
-title: Broken Data Pipeline Fixer
-emoji: 🔧
-colorFrom: blue
-colorTo: purple
-sdk: docker
-app_port: 8000
----
+<div align="center">
+  <h1>🔧 Broken Data Pipeline Fixer</h1>
+  <p>An OpenEnv-compatible reinforcement learning environment for repairing broken data pipelines.</p>
+</div>
 
-# 🔧 Broken Data Pipeline Fixer
+## 🧠 Environment & RL Formulation
 
-An **OpenEnv-compatible reinforcement learning environment** that dynamically generates, breaks, and simulates real-world data pipelines. An AI agent learns to repair them by diagnosing schema errors and issuing surgical edits.
+This project is formulated as a standard sparse-reward reinforcement learning problem with sequence modifications. The environment acts as an interpreter, applying a pipeline of data operations (e.g., `load_csv`, `clean_nulls`) using a strict schema engine. If any step fails data dependency checks or type validations, the pipeline halts.
 
-> **Hugging Face Space:** [`Chinmay2005/broken_pipeline_fixer`](https://huggingface.co/spaces/Chinmay2005/broken_pipeline_fixer)
+### State (Observation Space)
+The state object (`obs`) encapsulates:
+- `pipeline`: The sequence of current operations.
+- `schema_state`: The dynamic dataframe schema evaluated up to the point of failure.
+- `error`: The explicit fatal error message (if any), such as "Column 'email' not found."
+- `issues_remaining`: Internal metric indicating structural difference against correct solution.
 
----
+### Action Space
+The agent repairs the pipeline using a discrete, structured action space string format:
+| Action | Description |
+|:---|:---|
+| `diagnose` | Request deeper log inspection without mutating state. |
+| `reorder` | Automatically sort operations chronologically by operational phase (extract → clean → transform). |
+| `swap:<i>:<j>` | Swap step `i` and `j`. |
+| `remove:<pos>` | Attempt to delete anomalous constraints or logic. |
+| `insert:<pos>:<op>:<k=v>` | Bootstrap missing operations. |
+| `fix_param:<pos>:k:v` | Resolve typos or parameter drift. |
 
-## 📖 Problem Statement
-
-Modern data pipelines frequently break due to missing columns, incorrect transformations, or incompatible operations. Current AI systems can fix isolated code errors but fail to reason about multi-step data workflows and deep dependencies. 
-
-This project goes beyond simple code fixing: the agent must understand schema evolution and inter-step dependencies.
-
-| Failure Mode | Example |
-|---|---|
-| **Missing step** | `clean_nulls` removed → downstream step fails on null values |
-| **Wrong order** | `cast_type` runs before `clean_nulls` → type casting error |
-| **Bad parameter** | Typo in column name: `"emial"` instead of `"email"` |
-| **Junk step** | Invalid, extraneous operation injected |
-
----
-
-## 🧠 Dynamic Pipeline Generation & Schema Engine
-
-Unlike static environments, pipelines here are **dynamically generated**. 
-
-Each task samples from one of 3 real-world templates (User ETL, Sales Analytics, Log Processing) and applies randomized breakage based on the difficulty level.
-
-### Execution & Schema Engine
-The environment tracks the data schema at every step. Each operation transforms the schema (e.g. `rename_column`, `add_derived`). If a step attempts an operation on a column that does not exist in the schema at that point in time, it results in a tangible error that the agent must parse.
+### Reward Shaping
+- **`+1.00`** — Full completion (pipeline functions optimally & matches target).
+- **`+0.30` * `progress`** — Proportional reward for making structural progress.
+- **`+0.05`** — Pipeline successfully executes end-to-end without failing.
+- **`-0.05`** — Standard penalty per turn to incentivize speed.
+- **`-0.10` / `-0.20`** — Inefficient or actively regressive steps.
+- **`-0.30`** — Formatting failure (hallucination).
 
 ---
 
-## 🕹️ RL Formulation
+## 🚀 Generalizability API
 
-### State (Observation)
+This environment adheres strictly to OpenAI Gym/OpenEnv conventions but incorporates **complete generalization**. You do not need to rely on the built-in tasks!
 
-The agent observes the **current pipeline**, the **error message** if execution failed, and the **schema state**:
+### Initializing with Custom Pipelines
 
+You can directly construct the environment with your own broken pipeline sequence and target standard:
+
+```python
+from env.pipeline_env import DataPipelineEnv
+
+# Fully generalized constructor
+env = DataPipelineEnv(
+    pipeline=[
+        {"op": "load_csv", "params": {"file": "data.csv"}},
+        {"op": "filter_rows", "params": {"column": "sale_price", "condition": ">", "value": "100"}}
+    ],
+    schema={"id": "int", "sales_price": "float"},  # Typo in source column format triggers breakage
+    correct_pipeline=[ ... ]
+)
+
+# Start sequence exactly as standard
+obs, info = env.reset()
+```
+
+The system automatically parses structured operations, builds the step validation graph, and calculates error counts based on the custom input!
+
+---
+
+## 🧪 Running the Environment
+
+### 1. Terminal Inference & Custom Verification
+
+To benchmark the RL agent locally without touching an API or UI, run `inference.py`.
+By default, this will run the built-in `[easy, medium, hard]` tasks:
+
+```bash
+python inference.py
+```
+
+> [!TIP]
+> **Evaluate with your own JSON structure!**
+> You can pass an arbitrary setup to verify robustness against unseen data:
+> ```bash
+> python inference.py --input input_pipeline.json
+> ```
+
+Example Output (`python inference.py --input input_pipeline.json`):
+```text
+[START] task=custom_(input_pipeline.json) env=broken_pipeline_fixer
+[INFO]  Agent: RuleBasedAgent (Fallback)
+============================================================
+[STEP 01] action=fix_param:1:column:purchase_amt         
+          reward=+1.00 | issues_left=0 | done=true  
+------------------------------------------------------------
+[END]   success=true 
+        steps=1/15
+        score=1.0000/1.0000 
+
+### FINAL RESULTS ###
+Task: Custom File   Score: 1.0000
+```
+*Note: If `HF_TOKEN` isn't set, `inference.py` gracefully falls back to a deterministic, completely free `RuleBasedAgent` to solve the pipeline deterministically!*
+
+### 2. Interactive Web UI
+
+This project also includes a beautiful, premium Hackathon-ready **Live Demo Environment**.
+
+Start the server:
+```bash
+uvicorn server.app:app --host 0.0.0.0 --port 8000 --reload
+```
+Then visit: `http://localhost:8000/`
+
+---
+
+## 🌐 Headless API Evaluation (`POST /run-pipeline`)
+
+For hackathon judging and external evaluation, the system exposes a seamless REST API interface. You can submit entirely arbitrary workflows to the environment without any UI interaction. The RL evaluation agent will attempt to resolve structural issues and return a complete episode trace!
+
+**Endpoint**: `POST /run-pipeline`
+
+**Request Format** (`application/json`):
 ```json
 {
   "pipeline": [
-    {"step": 0, "op": "load_csv", "status": "ok"},
-    {"step": 1, "op": "rename_column", "params": {"from": "signup", "to": "reg"}, "status": "ok"},
-    {"step": 2, "op": "cast_type", "params": {"column": "signup"}, "status": "error"}
+    {"op": "clean_nulls", "params": {"column": "email"}},
+    {"op": "load_csv", "params": {}},
+    {"op": "save_output", "params": {"format": "csv"}}
   ],
-  "error": "Step 2: column 'signup' not found. Available: ['id', 'reg']",
-  "issues_remaining": 1
+  "schema": ["user_id", "email_address", "revenue"]
 }
 ```
 
-### Actions
+> [!TIP]
+> `correct_pipeline` is an optional array parameter. If omitted, the environment will automatically infer a structurally organized baseline pipeline for the agent to optimize towards! Note: The `schema` can be an array of strings or a `{column: type}` dictionary!
 
-The agent can perform surgical operations to fix the pipeline:
-
-| Action format | Example |
-|---|---|
-| `diagnose` | Generate a detailed diagnostic report |
-| `swap:<i>:<j>` | `swap:1:2` (Swap steps at positions 1 and 2) |
-| `insert:<pos>:<op>:<params>` | `insert:2:clean_nulls:column=email` |
-| `remove:<pos>` | `remove:4` (Delete invalid step 4) |
-| `fix_param:<idx>:<key>:<val>`| `fix_param:1:from:signup_date` |
-| `reorder` | Automatically reorder by dependency category |
-
-### Reward Function
-
-| Condition | Reward |
-|---|---|
-| Pipeline fully correct | **+1.0** |
-| Partial fix (reduces issues count) | **+0.3 * progress_ratio** |
-| No effect | **−0.1** |
-| Made things worse / Invalid action | **−0.3** |
-| Diagnosed | **−0.05** |
-| Step penalty | **−0.05** |
-
----
-
-## 🧩 Task Difficulty Levels
-
-| Level | Template | Max Steps | Breakage Types |
-|---|---|---|---|
-| **Easy** | User ETL | 8 | 1 break (Missing step OR wrong order) |
-| **Medium** | Sales Analytics | 12 | 2 breaks (Order swap + missing step) |
-| **Hard** | Log Processing | 15 | 3+ breaks (Swap + missing + corrupt param + random junk) |
-
----
-
-## 📊 Grading
-
-Each task is scored deterministically on a **0.0–1.0** scale:
-
-| Component | Weight | Description |
-|---|---|---|
-| **Correctness** | 40% | Does the final pipeline match the correct operations? |
-| **Efficiency** | 30% | How close to the optimal step count? |
-| **Issues Resolved** | 15% | Fraction of the original issues fixed |
-| **Execution** | 15% | Does the pipeline run without throwing schema errors? |
-
----
-
-## 🚀 Setup & Running
-
-### Prerequisites
-
-- Python 3.8+
-- Docker (optional, for containerised deployment)
-
-### Install Dependencies
-
+**Curl Example**:
 ```bash
-pip install -r requirements.txt
+curl -X POST http://localhost:8000/run-pipeline \
+     -H "Content-Type: application/json" \
+     -d '{
+       "pipeline": [
+           {"op": "clean_nulls", "params": {"column": "email"}},
+           {"op": "load_csv", "params": {}}
+       ],
+       "schema": ["user_id", "revenue"]
+     }'
 ```
 
-### Run Baseline Inference (Local)
-
-Run a baseline Qwen 72B Instruct instance interacting with the env:
-```bash
-HF_TOKEN=hf_YOUR_TOKEN python inference.py
-```
-
-### Run API Server (Local)
-
-Serves the REST API and interactive UI:
-```bash
-uvicorn server.app:app --host 0.0.0.0 --port 8000
-```
-Interactive UI available at `http://localhost:8000/`.
-
----
-
-## 🔑 Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `API_BASE_URL` | `https://router.huggingface.co/v1` | LLM API endpoint |
-| `MODEL_NAME` | `Qwen/Qwen2.5-72B-Instruct` | Model identifier for inference |
-| `HF_TOKEN` | — | Hugging Face API key (also used as `API_KEY`) |
-
----
-
-## 📜 Logging Format
-
-The inference script emits structured stdout logs compatible with OpenEnv validation wrappers:
-
-```
-[START] task=easy env=broken_pipeline_fixer model=Qwen/Qwen2.5-72B-Instruct
-[STEP] step=1 action=insert:2:validate_schema:required_columns=id,email reward=0.95 done=true error=null
-[END] success=true steps=1 score=1.00 rewards=0.95
+**Response Format**: You will receive an exact trace of the sequence of actions, rewards distributed, issues encountered, and the overall summary. 
+```json
+{
+  "steps": [
+    {
+      "step_number": 1,
+      "action": "reorder",
+      "reward": 0.05,
+      "issue_detected": "Dataset not loaded.",
+      "fix_applied": "Reordered: ['clean_nulls', 'load_csv'] \u2192 ['load_csv', 'clean_nulls']",
+      "pipeline_state": [
+        {"op": "load_csv", "params": {}},
+        {"op": "clean_nulls", "params": {"column": "email"}}
+      ]
+    }
+  ],
+  "summary": {
+    "total_steps": 1,
+    "total_reward": 1.05,
+    "issues_fixed": 1,
+    "success": true
+  }
+}
 ```
 
 ---
 
-## 🔮 Extensibility
-
-This environment is designed to be **drop-in compatible** with standard RL training loops (using the HTTP client) or with any LLM loop.
+## ⚙️ Project Structure
+- `env/` : `DataPipelineEnv` (Gym-like structure)
+- `core/` : Internal pipeline runner, evaluator, and strict schema validation graph
+- `tasks/` : Difficulty logic, break generator, and scoring
+- `server/` : OpenEnv FastAPI bindings and REST endpoints
+- `static/` : Interactive front-end application
+- `agent.py`: LLM agent logic and RuleBasedAgent implementation logic

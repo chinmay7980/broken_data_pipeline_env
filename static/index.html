@@ -4,685 +4,1195 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🔧 Broken Data Pipeline Fixer</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="description" content="An OpenEnv-compatible reinforcement learning environment for diagnosing and fixing broken data pipelines in real time.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* ══════════════════════════════════════════════════
+           DESIGN TOKENS
+        ══════════════════════════════════════════════════ */
+        :root {
+            --bg: #070711;
+            --surface: rgba(15, 15, 28, 0.7);
+            --surface-hover: rgba(20, 20, 38, 0.85);
+            --border: rgba(255, 255, 255, 0.07);
+            --border-focus: rgba(139, 92, 246, 0.6);
+            --text: #f1f5f9;
+            --text-muted: #8896aa;
+            --text-dim: #4b5563;
+
+            --purple: #8b5cf6;
+            --pink: #d946ef;
+            --blue: #3b82f6;
+            --green: #10b981;
+            --amber: #f59e0b;
+            --red: #ef4444;
+
+            --grad-brand: linear-gradient(135deg, #8b5cf6 0%, #d946ef 50%, #f472b6 100%);
+            --grad-success: linear-gradient(135deg, #059669, #10b981);
+            --grad-danger:  linear-gradient(135deg, #b91c1c, #ef4444);
+
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
+        }
+
+        /* ══════════════════════════════════════════════════
+           RESET & BASE
+        ══════════════════════════════════════════════════ */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background: #0f0f1a;
-            color: #e0e0e0;
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            background-image:
+                radial-gradient(ellipse 80% 60% at 10% 0%,   rgba(139, 92, 246, 0.09) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 40% at 90% 100%, rgba(217, 70, 239, 0.07) 0%, transparent 55%);
+            background-attachment: fixed;
+            color: var(--text);
             min-height: 100vh;
-            padding: 24px;
+            padding: 36px 24px 64px;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
         }
 
-        .container { max-width: 1000px; margin: 0 auto; }
+        .container { max-width: 1100px; margin: 0 auto; }
 
-        h1 {
-            font-size: 1.8rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+        /* ══════════════════════════════════════════════════
+           HEADER
+        ══════════════════════════════════════════════════ */
+        .header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 36px;
+            animation: fadeDown 0.5s ease-out both;
+        }
+
+        @keyframes fadeDown {
+            from { opacity: 0; transform: translateY(-12px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .header-left h1 {
+            font-size: 2.25rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            background: var(--grad-brand);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin-bottom: 4px;
+            background-clip: text;
+            line-height: 1.1;
         }
 
-        .subtitle {
-            color: #888;
-            font-size: 0.85rem;
-            margin-bottom: 24px;
+        .header-left .subtitle {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 6px;
+            font-weight: 400;
         }
 
-        /* ── Cards ─────────────────────────────────────── */
+        .header-badges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-top: 4px;
+        }
+
+        .badge {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 30px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        .badge-openenv { background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); }
+        .badge-rl      { background: rgba(59,130,246,0.15); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
+        .badge-live    { background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3);
+                         display: flex; align-items: center; gap: 5px; }
+        .badge-live::before {
+            content: '';
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); }
+            50%       { box-shadow: 0 0 0 5px rgba(16,185,129,0); }
+        }
+
+        /* ══════════════════════════════════════════════════
+           DONE BANNER
+        ══════════════════════════════════════════════════ */
+        .done-banner {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 16px 24px;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 28px;
+        }
+        .done-banner.success {
+            display: flex;
+            background: rgba(16,185,129,0.08);
+            border: 1px solid rgba(16,185,129,0.25);
+            color: #34d399;
+            animation: bannerPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .done-banner.failure {
+            display: flex;
+            background: rgba(239,68,68,0.08);
+            border: 1px solid rgba(239,68,68,0.25);
+            color: #fca5a5;
+            animation: bannerPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes bannerPop {
+            from { opacity: 0; transform: scale(0.95) translateY(-8px); }
+            to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        /* ══════════════════════════════════════════════════
+           LAYOUT GRID
+        ══════════════════════════════════════════════════ */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1.15fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+
+        @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+
+        /* ══════════════════════════════════════════════════
+           CARDS
+        ══════════════════════════════════════════════════ */
         .card {
-            background: #1a1a2e;
-            border: 1px solid #2a2a40;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 16px;
+            background: var(--surface);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.2), 0 0 0 0 transparent;
+            transition: box-shadow 0.3s;
+        }
+        .card:hover { box-shadow: 0 4px 32px rgba(0,0,0,0.3); }
+
+        /* staggered entrance */
+        .card-1 { animation: cardIn 0.5s 0.0s ease-out both; }
+        .card-2 { animation: cardIn 0.5s 0.1s ease-out both; }
+        .card-3 { animation: cardIn 0.5s 0.2s ease-out both; }
+        .card-4 { animation: cardIn 0.5s 0.3s ease-out both; }
+        @keyframes cardIn {
+            from { opacity: 0; transform: translateY(14px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .card-icon {
+            width: 32px; height: 32px;
+            background: rgba(139,92,246,0.1);
+            border: 1px solid rgba(139,92,246,0.2);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
         }
 
         .card-title {
             font-size: 0.75rem;
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: #888;
-            margin-bottom: 12px;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
         }
 
-        /* ── Pipeline Visualization ───────────────────── */
+        /* ══════════════════════════════════════════════════
+           PIPELINE VISUALIZATION
+        ══════════════════════════════════════════════════ */
         .pipeline-vis {
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            min-height: 48px;
+            gap: 10px;
+            min-height: 56px;
         }
 
         .pipe-step-container {
             display: flex;
             align-items: center;
-            background: #1e1e2e;
-            border-radius: 8px;
-            border: 1px solid #3a3a50;
-            padding: 8px 12px;
-            gap: 12px;
+            border-radius: var(--radius-md);
+            border: 1px solid rgba(255,255,255,0.05);
+            padding: 12px 16px;
+            gap: 14px;
             font-size: 0.85rem;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.25s;
+            cursor: default;
+            animation: stepIn 0.35s ease-out both;
         }
 
-        .pipe-step-container.error { border-color: #ef4444; background: #2a1515; }
-        .pipe-step-container.ok { border-color: #10b981; background: #102a1b; }
-        .pipe-step-container.pending { border-color: #f59e0b; }
+        @keyframes stepIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
 
-        .step-index {
-            color: #666;
-            font-family: monospace;
-            width: 24px;
+        /* Staggered step delay via CSS counters workaround: inline style is set via JS */
+        .pipe-step-container:hover { transform: translateX(4px); }
+
+        /* Left accent bar */
+        .pipe-step-container::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 3px;
+            border-radius: 4px 0 0 4px;
+        }
+
+        .pipe-step-container.ok {
+            background: linear-gradient(90deg, rgba(16,185,129,0.05) 0%, rgba(255,255,255,0.02) 100%);
+            border-color: rgba(16,185,129,0.2);
+        }
+        .pipe-step-container.ok::before { background: #10b981; }
+        .pipe-step-container.ok:hover { box-shadow: 0 0 20px rgba(16,185,129,0.08); }
+
+        .pipe-step-container.error {
+            background: linear-gradient(90deg, rgba(239,68,68,0.07) 0%, rgba(255,255,255,0.02) 100%);
+            border-color: rgba(239,68,68,0.25);
+        }
+        .pipe-step-container.error::before { background: #ef4444; }
+        .pipe-step-container.error:hover { box-shadow: 0 0 20px rgba(239,68,68,0.1); }
+
+        .pipe-step-container.pending {
+            background: rgba(255,255,255,0.02);
+            border-color: rgba(245,158,11,0.15);
+        }
+        .pipe-step-container.pending::before { background: #f59e0b; opacity: 0.5; }
+
+        .step-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-dim);
+            width: 20px;
+            flex-shrink: 0;
+            text-align: center;
         }
 
         .step-op {
             font-weight: 600;
-            color: #a855f7;
-            width: 120px;
+            color: #c4b5fd;
+            flex-shrink: 0;
+            min-width: 136px;
+            font-size: 0.85rem;
         }
 
         .step-params {
-            color: #aaa;
+            color: #94a3b8;
             flex-grow: 1;
-            font-family: monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 0.75rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        .step-status {
-            font-weight: 600;
+        .step-badge {
+            font-weight: 700;
+            font-size: 0.65rem;
             text-transform: uppercase;
-            font-size: 0.7rem;
-            padding: 2px 6px;
-            border-radius: 4px;
+            padding: 3px 9px;
+            border-radius: 30px;
+            letter-spacing: 0.06em;
+            flex-shrink: 0;
         }
-        .status-ok { background: #064e3b; color: #6ee7b7; }
-        .status-error { background: #4c1d2e; color: #fca5a5; }
-        .status-pending { background: #78350f; color: #fcd34d; }
+        .badge-ok      { background: rgba(16,185,129,0.12);  color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+        .badge-error   { background: rgba(239,68,68,0.12);   color: #fca5a5; border: 1px solid rgba(239,68,68,0.25); }
+        .badge-pending { background: rgba(245,158,11,0.12);  color: #fcd34d; border: 1px solid rgba(245,158,11,0.2); }
 
         .step-error-msg {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
             color: #fca5a5;
-            font-size: 0.75rem;
-            margin-top: 4px;
-            margin-left: 36px;
-            font-style: italic;
+            font-size: 0.78rem;
+            margin-top: 6px;
+            margin-left: 50px;
+            background: rgba(239,68,68,0.06);
+            border: 1px solid rgba(239,68,68,0.15);
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            font-family: 'JetBrains Mono', monospace;
         }
+
+        /* ══════════════════════════════════════════════════
+           SCHEMA VIS
+        ══════════════════════════════════════════════════ */
+        .schema-wrap { margin-top: 20px; }
 
         .schema-vis {
-            font-family: monospace;
-            font-size: 0.75rem;
-            color: #ccc;
-            background: #12121e;
-            padding: 10px;
-            border-radius: 6px;
-            margin-top: 10px;
-            border: 1px solid #2a2a40;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: #94a3b8;
+            background: rgba(0,0,0,0.3);
+            padding: 14px 16px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
         }
 
-        /* ── Controls ─────────────────────────────────── */
-        .controls, .action-input {
+        .schema-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px;
+            padding: 3px 8px;
+            margin: 3px 4px 3px 0;
+            font-size: 0.75rem;
+            background: rgba(255,255,255,0.03);
+        }
+        .schema-chip .col-name { color: #c4b5fd; font-weight: 600; }
+        .schema-chip .col-type { color: #64748b; }
+
+        /* ══════════════════════════════════════════════════
+           STATS
+        ══════════════════════════════════════════════════ */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        @media (max-width: 500px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+        .stat-box {
+            background: rgba(0,0,0,0.25);
+            border-radius: var(--radius-md);
+            padding: 18px 12px;
+            text-align: center;
+            border: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+        .stat-box:hover { transform: translateY(-2px); }
+        .stat-box::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            transition: color 0.4s;
+        }
+        .stat-value.positive { color: #10b981; }
+        .stat-value.negative { color: #f43f5e; }
+        .stat-value.neutral  { color: var(--text); }
+
+        .stat-label {
+            font-size: 0.67rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 600;
+            margin-top: 6px;
+        }
+
+        /* ══════════════════════════════════════════════════
+           CONTROLS
+        ══════════════════════════════════════════════════ */
+        .controls {
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
             align-items: center;
+            margin-bottom: 20px;
         }
 
-        select, button, input {
-            font-family: 'Inter', sans-serif;
-            font-size: 0.85rem;
-            border: none;
-            border-radius: 8px;
-            padding: 10px 18px;
-            transition: all 0.2s;
+        .action-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: stretch;
         }
 
         select, input {
-            background: #2a2a40;
-            color: #e0e0e0;
-            border: 1px solid #3a3a50;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 500;
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: rgba(255,255,255,0.04);
+            color: var(--text);
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
         }
+        select:focus, input:focus {
+            border-color: var(--border-focus);
+            background: rgba(255,255,255,0.06);
+            box-shadow: 0 0 0 3px rgba(139,92,246,0.12);
+        }
+        select option { background: #0f0f1c; }
 
-        input {
+        input#actionInp {
             flex-grow: 1;
             min-width: 200px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
         }
 
-        button { cursor: pointer; }
-        
-        .btn-reset {
-            background: linear-gradient(135deg, #6366f1, #818cf8);
+        button {
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 10px 18px;
+            border-radius: var(--radius-sm);
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--purple), #a855f7);
             color: white;
-            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(139,92,246,0.25);
         }
-        .btn-reset:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4); }
-
-        .btn-action {
-            background: #10b981;
-            color: #064e3b;
-            font-weight: 600;
-        }
-        .btn-action:hover { background: #34d399; transform: translateY(-1px); }
-        .btn-action:disabled { background: #2a2a40; color: #555; cursor: not-allowed; transform: none; }
-
-        /* ── Stats Row ────────────────────────────────── */
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-            gap: 10px;
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139,92,246,0.4);
         }
 
-        .stat-box {
-            background: #12121e;
-            border-radius: 8px;
-            padding: 12px;
-            text-align: center;
-            border: 1px solid #2a2a40;
+        .btn-ghost {
+            background: rgba(255,255,255,0.05);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-ghost:hover {
+            background: rgba(255,255,255,0.09);
         }
 
-        .stat-value {
-            font-size: 1.4rem;
-            font-weight: 700;
+        .btn-blue {
+            background: rgba(59,130,246,0.1);
+            color: #93c5fd;
+            border: 1px solid rgba(59,130,246,0.25);
+        }
+        .btn-blue:hover {
+            background: rgba(59,130,246,0.2);
+            color: white;
+            border-color: rgba(59,130,246,0.5);
         }
 
-        .stat-value.positive { color: #34d399; }
-        .stat-value.negative { color: #f87171; }
-        .stat-value.neutral { color: #a78bfa; }
-
-        .stat-label {
-            font-size: 0.7rem;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-top: 2px;
+        .btn-run {
+            background: var(--green);
+            color: #022c22;
         }
+        .btn-run:hover { background: #34d399; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(16,185,129,0.3); }
+        .btn-run:disabled { background: rgba(255,255,255,0.05); color: var(--text-dim); cursor: not-allowed; transform: none; box-shadow: none; }
 
-        /* ── Log ──────────────────────────────────────── */
-        .log {
-            max-height: 260px;
-            overflow-y: auto;
-            font-family: 'SF Mono', 'Fira Code', monospace;
+        .btn-autofix {
+            background: linear-gradient(135deg, #9333ea, #ec4899);
+            color: white;
+        }
+        .btn-autofix:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(217,70,239,0.35);
+        }
+        .btn-autofix:disabled { background: rgba(255,255,255,0.05); color: var(--text-dim); cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* ══════════════════════════════════════════════════
+           ACTION HINT
+        ══════════════════════════════════════════════════ */
+        .action-hint {
+            margin-top: 14px;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 10px 14px;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 0.75rem;
-            line-height: 1.6;
-            background: #12121e;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #2a2a40;
+            color: var(--text-muted);
+            line-height: 1.8;
         }
+        .action-hint span { color: #c4b5fd; font-weight: 600; }
 
-        .log-entry { padding: 4px 0; border-bottom: 1px solid #1e1e2e; }
-        .log-step { color: #818cf8; }
-        .log-action { color: #c084fc; font-weight: 600; }
-        .log-reward { font-weight: 600; }
+        /* ══════════════════════════════════════════════════
+           ACTION LOG
+        ══════════════════════════════════════════════════ */
+        .log {
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            line-height: 1.7;
+            background: rgba(0,0,0,0.3);
+            padding: 16px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border);
+        }
+        .log::-webkit-scrollbar { width: 6px; }
+        .log::-webkit-scrollbar-track { background: transparent; }
+        .log::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 6px; }
+
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+        }
+        .log-step   { color: #818cf8; font-weight: 700; }
+        .log-action { color: #d8b4fe; font-weight: 600; background: rgba(216,180,254,0.08); padding: 0 5px; border-radius: 4px; }
+        .log-reward { font-weight: 700; }
         .log-reward.pos { color: #34d399; }
         .log-reward.neg { color: #fca5a5; }
-        .log-info { color: #999; }
-        .log-err { color: #ef4444; }
+        .log-info   { color: #6b7280; }
+        .log-err    { color: #f87171; }
 
-        /* ── Done Banner ──────────────────────────────── */
-        .done-banner {
-            display: none;
-            padding: 14px;
-            border-radius: 8px;
-            text-align: center;
-            font-weight: 600;
-            margin-bottom: 16px;
-            animation: fadeIn 0.3s ease;
-        }
-        .done-banner.success { display: block; background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
-        .done-banner.failure { display: block; background: #4c1d2e; color: #fca5a5; border: 1px solid #ef4444; }
-
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
-
-        .two-col {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-        }
-
-        @media (max-width: 800px) {
-            .two-col { grid-template-columns: 1fr; }
-        }
-
-        .tag {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.7rem;
-            font-weight: 600;
-        }
-        .tag-easy { background: #064e3b; color: #6ee7b7; }
-        .tag-medium { background: #78350f; color: #fcd34d; }
-        .tag-hard { background: #4c1d2e; color: #fca5a5; }
-        
-        .action-help {
-            font-size: 0.7rem;
-            color: #888;
-            margin-top: 8px;
-            font-family: monospace;
-        }
-
-        /* ── Modal ────────────────────────────────────── */
+        /* ══════════════════════════════════════════════════
+           MODALS
+        ══════════════════════════════════════════════════ */
         .modal-overlay {
-            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8);
-            align-items: center; justify-content: center; z-index: 100;
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
         }
+        .modal-overlay.open { display: flex; animation: overlayIn 0.25s ease; }
+        @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
+
         .modal {
-            background: #1a1a2e; border: 1px solid #3a3a50; border-radius: 12px; width: 600px; max-width: 90vw; padding: 24px;
+            background: rgba(14,14,22,0.95);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: var(--radius-xl);
+            width: 660px;
+            max-width: 92vw;
+            padding: 32px;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+            animation: modalPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
         }
+        @keyframes modalPop {
+            from { opacity: 0; transform: scale(0.93) translateY(8px); }
+            to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .modal-header h2 { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+
+        .field-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
         .modal textarea {
-            width: 100%; height: 120px; background: #12121e; color: #e0e0e0; font-family: monospace;
-            border: 1px solid #3a3a50; border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 0.75rem;
+            width: 100%;
+            height: 110px;
+            background: rgba(0,0,0,0.4);
+            color: #d1d5db;
+            font-family: 'JetBrains Mono', monospace;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px 14px;
+            margin-bottom: 16px;
+            font-size: 0.78rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            resize: vertical;
+            outline: none;
         }
+        .modal textarea:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px rgba(139,92,246,0.12);
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 8px;
+        }
+
+        /* ══════════════════════════════════════════════════
+           DIVIDER
+        ══════════════════════════════════════════════════ */
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 20px 0;
+        }
+
+        /* ══════════════════════════════════════════════════
+           EMPTY STATE
+        ══════════════════════════════════════════════════ */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            text-align: center;
+            gap: 10px;
+        }
+        .empty-state .empty-icon { font-size: 2rem; opacity: 0.5; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🔧 Broken Data Pipeline Fixer</h1>
-        <p class="subtitle">Dynamic OpenEnv RL Environment — Diagnose schemas, swap steps, and fix errors</p>
+<div class="container">
 
-        <div id="doneBanner" class="done-banner"></div>
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-left">
+            <h1>🔧 Pipeline Fixer</h1>
+            <p class="subtitle">Reinforcement learning environment for diagnosing &amp; repairing broken data pipelines</p>
+            <div class="header-badges">
+                <span class="badge badge-openenv">OpenEnv</span>
+                <span class="badge badge-rl">RL Ready</span>
+                <span class="badge badge-live">Live</span>
+            </div>
+        </div>
+    </div>
 
-        <div class="two-col">
-            <!-- Pipeline State -->
-            <div class="card" style="grid-row: span 2;">
-                <div class="card-title">Pipeline Execution State</div>
+    <!-- DONE BANNER -->
+    <div id="doneBanner" class="done-banner"></div>
+
+    <!-- MAIN GRID -->
+    <div class="main-grid">
+
+        <!-- LEFT: Pipeline + Schema -->
+        <div>
+            <div class="card card-1">
+                <div class="card-header">
+                    <div class="card-icon">🔗</div>
+                    <div class="card-title">Pipeline Execution State</div>
+                </div>
                 <div id="pipelineVis" class="pipeline-vis">
-                    <span style="color:#555">Click "Reset" to start an episode</span>
+                    <div class="empty-state">
+                        <div class="empty-icon">⚙️</div>
+                        <div>Select a difficulty and click <strong>Reset</strong> to start an episode</div>
+                    </div>
                 </div>
-                
-                <div class="card-title" style="margin-top: 20px;">Current Schema (at failure point)</div>
-                <div id="schemaVis" class="schema-vis">
-                    —
+
+                <div class="schema-wrap">
+                    <div class="card-header" style="margin-bottom: 10px; margin-top: 4px;">
+                        <div class="card-icon" style="background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.2);">🗂️</div>
+                        <div class="card-title">Current Schema</div>
+                    </div>
+                    <div id="schemaVis" class="schema-vis">—</div>
                 </div>
             </div>
+        </div>
 
-            <!-- Controls & Stats -->
-            <div>
-                <div class="card">
+        <!-- RIGHT: Controls + Stats -->
+        <div>
+            <!-- Controls -->
+            <div class="card card-2">
+                <div class="card-header">
+                    <div class="card-icon">🎮</div>
                     <div class="card-title">Controls</div>
-                    <div class="controls" style="margin-bottom: 14px;">
-                        <select id="taskSelect">
-                            <option value="easy">Easy</option>
-                            <option value="medium">Medium</option>
-                            <option value="hard">Hard</option>
-                        </select>
-                        <button class="btn-reset" onclick="resetEnv()">🔄 Reset Environment</button>
-                        <button class="btn-action" style="background: #a855f7; color: white; border: 1px solid #a855f7" onclick="document.getElementById('customModal').style.display='flex'">+ Custom JSON</button>
-                        <button class="btn-action" style="background: #3b82f6; color: white; border: 1px solid #3b82f6" onclick="document.getElementById('rawCodeModal').style.display='flex'">+ Raw Code</button>
-                    </div>
-                    
-                    <div class="card-title" style="margin-top:8px">Execute Action</div>
-                    <div class="action-input">
-                        <input type="text" id="actionInp" placeholder="e.g. diagnose, swap:1:3, reorder" disabled onkeypress="if(event.key === 'Enter') doStep()">
-                        <button class="btn-action" id="btnRun" onclick="doStep()" disabled>▶ Run</button>
-                        <button class="btn-action" id="btnAutoFix" onclick="autoFix()" disabled style="background: linear-gradient(135deg, #a855f7, #ec4899); color: white;">✨ Auto-Fix (AI)</button>
-                    </div>
-                    <div class="action-help">
-                        Valid: diagnose, swap:&lt;i&gt;:&lt;j&gt;, insert:&lt;pos&gt;:&lt;op&gt;:&lt;params&gt;, remove:&lt;pos&gt;, fix_param:&lt;idx&gt;:&lt;key&gt;:&lt;val&gt;, reorder
-                    </div>
                 </div>
 
-                <div class="card">
+                <div class="controls">
+                    <select id="taskSelect">
+                        <option value="easy">🟢 Easy</option>
+                        <option value="medium">🟡 Medium</option>
+                        <option value="hard">🔴 Hard</option>
+                    </select>
+                    <button class="btn-primary" onclick="resetEnv()">↺ Reset Env</button>
+                    <button class="btn-ghost" onclick="openModal('customModal')">+ Custom JSON</button>
+                    <button class="btn-blue" onclick="openModal('rawCodeModal')">⌨ Raw Code</button>
+                    <button class="btn-ghost" onclick="runApiEval()" style="border-color: rgba(16,185,129,0.4); color: #34d399; background: rgba(16,185,129,0.05);">⚡ API Eval Run</button>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="card-title" style="margin-bottom: 12px;">Execute Action</div>
+                <div class="action-row">
+                    <input type="text" id="actionInp" placeholder="e.g.  diagnose  |  swap:1:3  |  reorder" disabled onkeypress="if(event.key==='Enter') doStep()">
+                    <button class="btn-run" id="btnRun" onclick="doStep()" disabled>▶ Run</button>
+                    <button class="btn-autofix" id="btnAutoFix" onclick="autoFix()" disabled>✨ Auto-Fix</button>
+                </div>
+
+                <div class="action-hint">
+                    <span>diagnose</span>  ·  <span>swap:&lt;i&gt;:&lt;j&gt;</span>  ·  <span>insert:&lt;pos&gt;:&lt;op&gt;:&lt;params&gt;</span><br>
+                    <span>remove:&lt;pos&gt;</span>  ·  <span>fix_param:&lt;idx&gt;:&lt;key&gt;:&lt;val&gt;</span>  ·  <span>reorder</span>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="card card-3">
+                <div class="card-header">
+                    <div class="card-icon">📊</div>
                     <div class="card-title">Episode Stats</div>
-                    <div class="stats">
-                        <div class="stat-box">
-                            <div id="statReward" class="stat-value neutral">—</div>
-                            <div class="stat-label">Last Reward</div>
-                        </div>
-                        <div class="stat-box">
-                            <div id="statTotal" class="stat-value neutral">—</div>
-                            <div class="stat-label">Total Reward</div>
-                        </div>
-                        <div class="stat-box">
-                            <div id="statIssues" class="stat-value negative">—</div>
-                            <div class="stat-label">Issues Rem.</div>
-                        </div>
-                        <div class="stat-box">
-                            <div id="statSteps" class="stat-value neutral">0</div>
-                            <div class="stat-label">Steps</div>
-                        </div>
+                </div>
+                <div class="stats">
+                    <div class="stat-box">
+                        <div id="statReward" class="stat-value neutral">—</div>
+                        <div class="stat-label">Last Reward</div>
+                    </div>
+                    <div class="stat-box">
+                        <div id="statTotal" class="stat-value neutral">—</div>
+                        <div class="stat-label">Total Reward</div>
+                    </div>
+                    <div class="stat-box">
+                        <div id="statIssues" class="stat-value negative">—</div>
+                        <div class="stat-label">Issues Left</div>
+                    </div>
+                    <div class="stat-box">
+                        <div id="statSteps" class="stat-value neutral">0</div>
+                        <div class="stat-label">Steps</div>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- Action Log -->
-        <div class="card">
+    <!-- ACTION LOG -->
+    <div class="card card-4">
+        <div class="card-header">
+            <div class="card-icon">📋</div>
             <div class="card-title">Action Log</div>
-            <div id="actionLog" class="log">
-                <div class="log-entry log-info">Waiting for episode to start…</div>
-            </div>
+        </div>
+        <div id="actionLog" class="log">
+            <div class="log-entry"><span class="log-info">Waiting for episode to start…</span></div>
         </div>
     </div>
 
-    <!-- Custom Modal -->
-    <div id="customModal" class="modal-overlay">
-        <div class="modal">
-            <h2 style="margin-bottom: 16px;">Upload Custom Pipeline</h2>
-            <div class="card-title">Initial Schema (JSON)</div>
-            <textarea id="inpSchema">{"id": "int", "name": "str"}</textarea>
-            
-            <div class="card-title">Correct Pipeline (JSON Array)</div>
-            <textarea id="inpCorrect">[{"op": "load_csv", "params": {"file": "data.csv"}}]</textarea>
-            
-            <div class="card-title">Broken Pipeline (JSON Array)</div>
-            <textarea id="inpBroken">[]</textarea>
-            
-            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px;">
-                <button style="background: #2a2a40; color: #fff;" onclick="document.getElementById('customModal').style.display='none'">Cancel</button>
-                <button class="btn-action" onclick="uploadCustom()">Upload & Run</button>
-            </div>
+</div><!-- /container -->
+
+
+<!-- ═══════════════════════════════════════════════════
+     MODALS
+═══════════════════════════════════════════════════ -->
+
+<!-- Custom Pipeline Modal -->
+<div id="customModal" class="modal-overlay" onclick="overlayClose(event, 'customModal')">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="card-icon">📤</div>
+            <h2>Upload Custom Pipeline</h2>
+        </div>
+
+        <div class="field-label">Initial Schema (JSON)</div>
+        <textarea id="inpSchema">{"id": "int", "name": "str"}</textarea>
+
+        <div class="field-label">Correct Pipeline (JSON Array)</div>
+        <textarea id="inpCorrect">[{"op": "load_csv", "params": {"file": "data.csv"}}]</textarea>
+
+        <div class="field-label">Broken Pipeline (JSON Array)</div>
+        <textarea id="inpBroken">[]</textarea>
+
+        <div class="modal-footer">
+            <button class="btn-ghost" onclick="closeModal('customModal')">Cancel</button>
+            <button class="btn-run" onclick="uploadCustom()">Upload &amp; Run →</button>
         </div>
     </div>
+</div>
 
-    <!-- Raw Code Modal -->
-    <div id="rawCodeModal" class="modal-overlay">
-        <div class="modal">
-            <h2 style="margin-bottom: 16px;">Upload Raw Code (SQL/Python)</h2>
-            <p style="color:#aaa; font-size:0.85rem; margin-bottom: 12px;">The LLM will parse your literal code into our internal structured pipeline. Then the AI will auto-fix it.</p>
-            
-            <div class="card-title">Paste Code</div>
-            <textarea id="inpRawCode">import pandas as pd
+<!-- Raw Code Modal -->
+<div id="rawCodeModal" class="modal-overlay" onclick="overlayClose(event, 'rawCodeModal')">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="card-icon">⌨️</div>
+            <h2>Upload Raw Code (SQL / Python)</h2>
+        </div>
+        <p style="color: var(--text-muted); font-size:0.85rem; margin-bottom: 18px;">
+            The LLM will parse your code into an internal structured pipeline, then attempt to auto-fix it.
+        </p>
+        <div class="field-label">Paste Your Code</div>
+        <textarea id="inpRawCode" style="height: 150px;">import pandas as pd
 df = pd.read_csv("data.csv")
 # Oh no, missing conversion!
 df = df[df['price'] > 100]
 df.to_csv("out.csv")</textarea>
-            
-            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px;">
-                <button style="background: #2a2a40; color: #fff;" onclick="document.getElementById('rawCodeModal').style.display='none'">Cancel</button>
-                <button class="btn-action" onclick="uploadRawCode()">Parse & Run</button>
-            </div>
+
+        <div class="modal-footer">
+            <button class="btn-ghost" onclick="closeModal('rawCodeModal')">Cancel</button>
+            <button class="btn-blue" onclick="uploadRawCode()">Parse &amp; Run →</button>
         </div>
     </div>
+</div>
 
-    <!-- Generated Code Modal -->
-    <div id="genCodeModal" class="modal-overlay">
-        <div class="modal">
-            <h2 style="margin-bottom: 16px;">Fixed Output Code</h2>
-            <textarea id="outRawCode" readonly></textarea>
-            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px;">
-                <button style="background: #2a2a40; color: #fff;" onclick="document.getElementById('genCodeModal').style.display='none'">Close</button>
-            </div>
+<!-- Generated Code Modal -->
+<div id="genCodeModal" class="modal-overlay" onclick="overlayClose(event, 'genCodeModal')">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="card-icon">✅</div>
+            <h2>Fixed Output Code</h2>
+        </div>
+        <textarea id="outRawCode" readonly style="height: 200px;"></textarea>
+        <div class="modal-footer">
+            <button class="btn-ghost" onclick="closeModal('genCodeModal')">Close</button>
         </div>
     </div>
+</div>
 
-    <script>
-        const API = '';  // Same origin
-        let totalReward = 0;
-        let isDone = false;
 
-        function renderPipeline(pipeline) {
-            const vis = document.getElementById('pipelineVis');
-            if (!pipeline || pipeline.length === 0) {
-                vis.innerHTML = '<span style="color:#555">Empty pipeline</span>';
-                return;
+<!-- ═══════════════════════════════════════════════════
+     JAVASCRIPT (logic preserved 1:1, minimal changes)
+═══════════════════════════════════════════════════ -->
+<script>
+    const API = '';  // Same origin
+    let totalReward = 0;
+    let isDone = false;
+
+    /* ── Modal helpers ──────────────────────────────── */
+    function openModal(id)  { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    function overlayClose(e, id) { if (e.target === e.currentTarget) closeModal(id); }
+
+    /* ── Pipeline render ────────────────────────────── */
+    function renderPipeline(pipeline) {
+        const vis = document.getElementById('pipelineVis');
+        if (!pipeline || pipeline.length === 0) {
+            vis.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div>Empty pipeline</div></div>`;
+            return;
+        }
+
+        let html = '';
+        pipeline.forEach((p, idx) => {
+            const cls = p.status || 'pending';
+            const bClass = cls === 'ok' ? 'badge-ok' : cls === 'error' ? 'badge-error' : 'badge-pending';
+            const delay = `animation-delay: ${idx * 0.05}s`;
+
+            html += `<div class="pipe-step-container ${cls}" style="${delay}">
+                       <div class="step-num">${p.step}</div>
+                       <div class="step-op">${p.op}</div>
+                       <div class="step-params">${JSON.stringify(p.params)}</div>
+                       <div class="step-badge ${bClass}">${cls}</div>
+                     </div>`;
+
+            if (p.error) {
+                html += `<div class="step-error-msg">⚠ ${p.error}</div>`;
             }
-            let html = '';
-            pipeline.forEach((p) => {
-                const cls = p.status;
-                html += `<div class="pipe-step-container ${cls}">`;
-                html += `<div class="step-index">${p.step}</div>`;
-                html += `<div class="step-op">${p.op}</div>`;
-                html += `<div class="step-params">${JSON.stringify(p.params)}</div>`;
-                html += `<div class="step-status status-${cls}">${cls}</div>`;
-                html += `</div>`;
-                if (p.error) {
-                    html += `<div class="step-error-msg">↳ ERROR: ${p.error}</div>`;
-                }
+        });
+        vis.innerHTML = html;
+    }
+
+    /* ── Schema render ──────────────────────────────── */
+    function renderSchema(schema) {
+        const vis = document.getElementById('schemaVis');
+        if (!schema || Object.keys(schema).length === 0) {
+            vis.innerHTML = '—';
+            return;
+        }
+        const chips = Object.entries(schema).map(([k, v]) =>
+            `<span class="schema-chip"><span class="col-name">${k}</span><span class="col-type">${v}</span></span>`
+        ).join('');
+        vis.innerHTML = chips;
+    }
+
+    /* ── Stats ──────────────────────────────────────── */
+    function updateStats(reward, steps, issues) {
+        const r = document.getElementById('statReward');
+        r.textContent = reward.toFixed(2);
+        r.className = 'stat-value ' + (reward > 0 ? 'positive' : reward < 0 ? 'negative' : 'neutral');
+
+        const t = document.getElementById('statTotal');
+        t.textContent = totalReward.toFixed(2);
+        t.className = 'stat-value ' + (totalReward > 0 ? 'positive' : totalReward < 0 ? 'negative' : 'neutral');
+
+        document.getElementById('statSteps').textContent = steps;
+
+        const i = document.getElementById('statIssues');
+        i.textContent = issues;
+        i.className = 'stat-value ' + (issues === 0 ? 'positive' : 'negative');
+    }
+
+    /* ── Log ────────────────────────────────────────── */
+    function addLog(text) {
+        const log = document.getElementById('actionLog');
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.innerHTML = text;
+        log.appendChild(entry);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    /* ── Button state ───────────────────────────────── */
+    function setButtons(enabled) {
+        document.getElementById('btnRun').disabled = !enabled;
+        document.getElementById('actionInp').disabled = !enabled;
+        document.getElementById('btnAutoFix').disabled = !enabled;
+        if (enabled) document.getElementById('actionInp').focus();
+    }
+
+    /* ── Reset ──────────────────────────────────────── */
+    async function resetEnv() {
+        const taskId = document.getElementById('taskSelect').value;
+        isDone = false;
+        totalReward = 0;
+        document.getElementById('doneBanner').className = 'done-banner';
+        document.getElementById('actionLog').innerHTML = '';
+        document.getElementById('actionInp').value = '';
+
+        try {
+            const res = await fetch(`${API}/reset`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: taskId })
             });
-            vis.innerHTML = html;
+            const data = await res.json();
+            renderPipeline(data.pipeline);
+            renderSchema(data.schema_state);
+            updateStats(0, 0, data.issues_remaining);
+            setButtons(true);
+            addLog(`<span class="log-info">🔄 Episode reset — Task: <strong style="color:#d8b4fe">${taskId}</strong> | ${data.info.task_description}</span>`);
+            if (data.error) addLog(`<span class="log-err">Initial Error: ${data.error}</span>`);
+        } catch (e) {
+            addLog(`<span class="log-err">❌ Fetch Error: ${e.message}</span>`);
         }
+    }
 
-        function renderSchema(schema) {
-            const vis = document.getElementById('schemaVis');
-            if (!schema || Object.keys(schema).length === 0) {
-                vis.innerHTML = '—';
-                return;
+    /* ── Upload Custom ──────────────────────────────── */
+    async function uploadCustom() {
+        try {
+            const schema  = JSON.parse(document.getElementById('inpSchema').value);
+            const correct = JSON.parse(document.getElementById('inpCorrect').value);
+            const broken  = JSON.parse(document.getElementById('inpBroken').value);
+
+            const res = await fetch(`${API}/upload_custom`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ initial_schema: schema, correct_pipeline: correct, broken_pipeline: broken, max_steps: 15 })
+            });
+            if (!res.ok) throw new Error('Upload failed: ' + await res.text());
+
+            const data = await res.json();
+            const sel = document.getElementById('taskSelect');
+            const opt = document.createElement('option');
+            opt.value = data.task_id;
+            opt.text  = 'Custom (' + data.task_id.substring(7) + ')';
+            sel.appendChild(opt);
+            sel.value = data.task_id;
+
+            closeModal('customModal');
+            resetEnv();
+        } catch (e) {
+            alert('Error parsing JSON or uploading: ' + e.message);
+        }
+    }
+
+    /* ── Auto-Fix ───────────────────────────────────── */
+    async function autoFix() {
+        if (isDone) return;
+        setButtons(false);
+        try {
+            addLog(`<span class="log-info">✨ <strong>AI Agent is thinking…</strong></span>`);
+            const res = await fetch(`${API}/agent/next_action`);
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+
+            document.getElementById('actionInp').value = data.action;
+            await doStep();
+
+            if (!isDone) { setTimeout(() => autoFix(), 1000); }
+        } catch (e) {
+            addLog(`<span class="log-err">🤖 AI Agent Error: ${e.message}</span>`);
+            setButtons(true);
+        }
+    }
+
+    /* ── Step ───────────────────────────────────────── */
+    async function doStep() {
+        if (isDone) return;
+        const action = document.getElementById('actionInp').value.trim();
+        if (!action) return;
+        document.getElementById('actionInp').value = '';
+
+        try {
+            const res = await fetch(`${API}/step`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action })
+            });
+            const data = await res.json();
+
+            totalReward += data.reward;
+            isDone = data.done;
+
+            renderPipeline(data.pipeline);
+            renderSchema(data.schema_state);
+            updateStats(data.reward, data.info.step_count || 0, data.issues_remaining);
+
+            const rwdClass = data.reward > 0 ? 'pos' : 'neg';
+            addLog(
+                `<span class="log-step">[${data.info.step_count}]</span> ` +
+                `<span class="log-action">${action}</span> → ` +
+                `<span class="log-reward ${rwdClass}">reward ${data.reward.toFixed(2)}</span> ` +
+                `<span class="log-info">${data.info.action_result?.detail || ''}</span>`
+            );
+
+            if (data.error) {
+                addLog(`<span class="log-err">❌ ${data.error}</span>`);
             }
-            let text = Object.entries(schema).map(([k, v]) => `${k}: ${v}`).join(', ');
-            vis.innerHTML = '{ ' + text + ' }';
-        }
 
-        function updateStats(reward, steps, issues) {
-            const r = document.getElementById('statReward');
-            r.textContent = reward.toFixed(2);
-            r.className = 'stat-value ' + (reward > 0 ? 'positive' : reward < 0 ? 'negative' : 'neutral');
-
-            const t = document.getElementById('statTotal');
-            t.textContent = totalReward.toFixed(2);
-            t.className = 'stat-value ' + (totalReward > 0 ? 'positive' : totalReward < 0 ? 'negative' : 'neutral');
-
-            document.getElementById('statSteps').textContent = steps;
-            
-            const i = document.getElementById('statIssues');
-            i.textContent = issues;
-            i.className = 'stat-value ' + (issues === 0 ? 'positive' : 'negative');
-        }
-
-        function addLog(text) {
-            const log = document.getElementById('actionLog');
-            const entry = document.createElement('div');
-            entry.className = 'log-entry';
-            entry.innerHTML = text;
-            log.appendChild(entry);
-            log.scrollTop = log.scrollHeight;
-        }
-
-        function setButtons(enabled) {
-            document.getElementById('btnRun').disabled = !enabled;
-            document.getElementById('actionInp').disabled = !enabled;
-            document.getElementById('btnAutoFix').disabled = !enabled;
-            if (enabled) document.getElementById('actionInp').focus();
-        }
-
-        async function resetEnv() {
-            const taskId = document.getElementById('taskSelect').value;
-            isDone = false;
-            totalReward = 0;
-            document.getElementById('doneBanner').className = 'done-banner';
-            document.getElementById('actionLog').innerHTML = '';
-            document.getElementById('actionInp').value = '';
-
-            try {
-                const res = await fetch(`${API}/reset`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ task_id: taskId })
-                });
-                const data = await res.json();
-                renderPipeline(data.pipeline);
-                renderSchema(data.schema_state);
-                updateStats(0, 0, data.issues_remaining);
-                setButtons(true);
-                addLog(`<span class="log-info">🔄 Episode reset — Task: <strong>${taskId}</strong> | ${data.info.task_description}</span>`);
-                if (data.error) addLog(`<span class="log-err">Initial Error: ${data.error}</span>`);
-            } catch (e) {
-                addLog(`<span class="log-err">❌ Fetch Error: ${e.message}</span>`);
-            }
-        }
-
-        async function uploadCustom() {
-            try {
-                const schema = JSON.parse(document.getElementById('inpSchema').value);
-                const correct = JSON.parse(document.getElementById('inpCorrect').value);
-                const broken = JSON.parse(document.getElementById('inpBroken').value);
-
-                const res = await fetch(`${API}/upload_custom`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        initial_schema: schema,
-                        correct_pipeline: correct,
-                        broken_pipeline: broken,
-                        max_steps: 15
-                    })
-                });
-                if (!res.ok) throw new Error("Upload failed: " + await res.text());
-                
-                const data = await res.json();
-                
-                const sel = document.getElementById('taskSelect');
-                const opt = document.createElement('option');
-                opt.value = data.task_id;
-                opt.text = "Custom Task (" + data.task_id.substring(7) + ")";
-                sel.appendChild(opt);
-                sel.value = data.task_id;
-
-                document.getElementById('customModal').style.display='none';
-                resetEnv();
-            } catch (e) {
-                alert("Error parsing JSON or uploading: " + e.message);
-            }
-        }
-
-        async function autoFix() {
-            if (isDone) return;
-            // Disable manual input during auto-fix
-            setButtons(false);
-            try {
-                addLog(`<span class="log-info">✨ <strong>AI Agent is thinking...</strong></span>`);
-                const res = await fetch(`${API}/agent/next_action`);
-                if (!res.ok) throw new Error(await res.text());
-                const data = await res.json();
-                
-                // Write action to input block and execute it
-                document.getElementById('actionInp').value = data.action;
-                await doStep();
-                
-                // If not done, schedule next loop
-                if (!isDone) {
-                    setTimeout(() => autoFix(), 1000);
+            if (data.done) {
+                setButtons(false);
+                const banner = document.getElementById('doneBanner');
+                if (data.info.pipeline_correct) {
+                    banner.className = 'done-banner success';
+                    banner.textContent = `✅ Pipeline Fixed! Total reward: ${totalReward.toFixed(2)} in ${data.info.step_count} steps`;
+                    addLog(`<span class="log-info" style="cursor:pointer;color:#3b82f6;text-decoration:underline;" onclick="generateFixedCode()">[Generate Fixed Python Code]</span>`);
+                } else {
+                    banner.className = 'done-banner failure';
+                    banner.textContent = `❌ Episode ended (${data.info.done_reason}). Total reward: ${totalReward.toFixed(2)}`;
                 }
-            } catch (e) {
-                addLog(`<span class="log-err">🤖 AI Agent Error: ${e.message}</span>`);
-                setButtons(true);
             }
+        } catch (e) {
+            addLog(`<span class="log-err">❌ Fetch Error: ${e.message}</span>`);
         }
+    }
 
-        async function doStep() {
-            if (isDone) return;
-            const action = document.getElementById('actionInp').value.trim();
-            if (!action) return;
-            document.getElementById('actionInp').value = '';
-            
-            try {
-                const res = await fetch(`${API}/step`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action })
-                });
-                const data = await res.json();
-                
-                // Track total reward differently - round correctly
-                totalReward += data.reward;
-                isDone = data.done;
+    /* ── Upload Raw Code ────────────────────────────── */
+    async function uploadRawCode() {
+        try {
+            closeModal('rawCodeModal');
+            addLog(`<span class="log-info">⏳ <strong>LLM is parsing your raw code…</strong></span>`);
 
-                renderPipeline(data.pipeline);
-                renderSchema(data.schema_state);
-                updateStats(data.reward, data.info.step_count || 0, data.issues_remaining);
+            const code = document.getElementById('inpRawCode').value;
+            const parseRes = await fetch(`${API}/parse_to_pipeline`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, language: 'python' })
+            });
+            if (!parseRes.ok) throw new Error(await parseRes.text());
+            const parsed = await parseRes.json();
 
-                const rwdClass = data.reward > 0 ? 'pos' : 'neg';
+            const uploadRes = await fetch(`${API}/upload_custom`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    initial_schema: parsed.initial_schema,
+                    correct_pipeline: parsed.pipeline,
+                    broken_pipeline: parsed.pipeline,
+                    max_steps: 15
+                })
+            });
+            if (!uploadRes.ok) throw new Error('Upload failed: ' + await uploadRes.text());
+            const data = await uploadRes.json();
+
+            const sel = document.getElementById('taskSelect');
+            const opt = document.createElement('option');
+            opt.value = data.task_id;
+            opt.text  = 'Raw Code (' + data.task_id.substring(7) + ')';
+            sel.appendChild(opt);
+            sel.value = data.task_id;
+
+            resetEnv();
+        } catch (e) {
+            addLog(`<span class="log-err">❌ Parse Error: ${e.message}</span>`);
+        }
+    }
+
+    /* ── Generate Fixed Code ────────────────────────── */
+    async function generateFixedCode() {
+        try {
+            addLog(`<span class="log-info">⏳ <strong>Generating fixed code…</strong></span>`);
+            const res = await fetch(`${API}/state`);
+            const envState = await res.json();
+
+            const parseRes = await fetch(`${API}/generate_code`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pipeline: envState.current_pipeline, language: 'python' })
+            });
+            if (!parseRes.ok) throw new Error(await parseRes.text());
+            const data = await parseRes.json();
+
+            document.getElementById('outRawCode').value = data.code;
+            openModal('genCodeModal');
+        } catch (e) {
+            addLog(`<span class="log-err">❌ Gen Error: ${e.message}</span>`);
+        }
+    }
+
+    /* ── Headless API Eval ──────────────────────────── */
+    async function runApiEval() {
+        if (isDone) {
+            addLog(`<span class="log-err">Env is already done. Reset first before API Eval!</span>`);
+            return;
+        }
+        setButtons(false);
+        try {
+            addLog(`<span class="log-info" style="color:#d8b4fe">🌐 <strong>Running Headless API Evaluation...</strong></span>`);
+
+            // 1. Fetch current UI environment state to send
+            const stateRes = await fetch(`${API}/state`);
+            const envState = await stateRes.json();
+
+            // 2. Call our new /run-pipeline endpoint!
+            const res = await fetch(`${API}/run-pipeline`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pipeline: envState.current_pipeline,
+                    schema: envState.schema_state
+                })
+            });
+
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+
+            // 3. Playback the steps
+            data.steps.forEach(s => {
+                const rwdClass = s.reward > 0 ? 'pos' : 'neg';
+                let infoStr = s.fix_applied ? s.fix_applied : (s.issue_detected ? `Issue: ${s.issue_detected}` : '');
                 addLog(
-                    `<span class="log-step">Step ${data.info.step_count}</span> ` +
-                    `<span class="log-action">${action}</span> → ` +
-                    `<span class="log-reward ${rwdClass}">reward: ${data.reward.toFixed(2)}</span> ` +
-                    `<span class="log-info">${data.info.action_result?.detail || ''}</span>`
+                    `<span class="log-step">[API STEP ${s.step_number}]</span> ` +
+                    `<span class="log-action">${s.action}</span> → ` +
+                    `<span class="log-reward ${rwdClass}">reward ${s.reward.toFixed(2)}</span> ` +
+                    `<span class="log-info">${infoStr}</span>`
                 );
-                
-                if (data.error) {
-                    addLog(`<span class="log-err">Current Error: ${data.error}</span>`);
-                }
+            });
 
-                if (data.done) {
-                    setButtons(false);
-                    const banner = document.getElementById('doneBanner');
-                    if (data.info.pipeline_correct) {
-                        banner.className = 'done-banner success';
-                        banner.textContent = `✅ Pipeline Fixed! Total reward: ${totalReward.toFixed(2)} in ${data.info.step_count} steps`;
-                        
-                        // Option to generate code
-                        addLog(`<span class="log-info" style="cursor:pointer; color:#3b82f6; text-decoration:underline;" onclick="generateFixedCode()">[Generate Fixed Python Code]</span>`);
-                    } else {
-                        banner.className = 'done-banner failure';
-                        banner.textContent = `❌ Episode ended (${data.info.done_reason}). Total reward: ${totalReward.toFixed(2)}`;
-                    }
-                }
-            } catch (e) {
-                addLog(`<span class="log-err">❌ Fetch Error: ${e.message}</span>`);
-            }
+            // 4. Present summary
+            addLog(`<span class="log-info" style="color:#10b981; font-weight:bold;">✅ API Test Complete! Total Reward: ${data.summary.total_reward}, Success: ${data.summary.success}</span>`);
+            addLog(`<span class="log-info" style="font-size: 0.7rem;">(Note: This was a stateless API run, the UI environment above was not modified.)</span>`);
+
+        } catch (e) {
+            addLog(`<span class="log-err">❌ API Run Error: ${e.message}</span>`);
         }
-
-        async function uploadRawCode() {
-            try {
-                document.getElementById('rawCodeModal').style.display='none';
-                addLog(`<span class="log-info">⏳ <strong>LLM is parsing your raw code...</strong></span>`);
-                
-                const code = document.getElementById('inpRawCode').value;
-                const parseRes = await fetch(`${API}/parse_to_pipeline`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code: code, language: 'python' })
-                });
-                if (!parseRes.ok) throw new Error(await parseRes.text());
-                const parsed = await parseRes.json();
-
-                // Now upload the parsed JSON as a custom pipeline
-                const uploadRes = await fetch(`${API}/upload_custom`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        initial_schema: parsed.initial_schema,
-                        correct_pipeline: parsed.pipeline, // LLM guesses the correct pipeline mostly, we'll let env break it or just use it.
-                        // Actually, if they paste broken code, the LLM might have outputted broken structure. 
-                        // To properly integrate, we will assume what they pasted is the broken pipeline itself.
-                        // We will set the 'correct' pipeline to be the same, so the agent modifies the broken one to run correctly.
-                        broken_pipeline: parsed.pipeline,
-                        correct_pipeline: parsed.pipeline, 
-                        max_steps: 15
-                    })
-                });
-                if (!uploadRes.ok) throw new Error("Upload failed: " + await uploadRes.text());
-                const data = await uploadRes.json();
-
-                const sel = document.getElementById('taskSelect');
-                const opt = document.createElement('option');
-                opt.value = data.task_id;
-                opt.text = "Raw Code (" + data.task_id.substring(7) + ")";
-                sel.appendChild(opt);
-                sel.value = data.task_id;
-
-                resetEnv();
-            } catch (e) {
-                addLog(`<span class="log-err">❌ Parse Error: ${e.message}</span>`);
-            }
-        }
-
-        async function generateFixedCode() {
-            try {
-                addLog(`<span class="log-info">⏳ <strong>Generating fixed code...</strong></span>`);
-                
-                // Get current pipeline state
-                const res = await fetch(`${API}/state`);
-                const envState = await res.json();
-
-                const parseRes = await fetch(`${API}/generate_code`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pipeline: envState.current_pipeline, language: 'python' })
-                });
-                if (!parseRes.ok) throw new Error(await parseRes.text());
-                const data = await parseRes.json();
-
-                document.getElementById('outRawCode').value = data.code;
-                document.getElementById('genCodeModal').style.display='flex';
-            } catch (e) {
-                addLog(`<span class="log-err">❌ Gen Error: ${e.message}</span>`);
-            }
-        }
-    </script>
+        setButtons(true);
+    }
+</script>
 </body>
 </html>

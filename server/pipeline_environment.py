@@ -37,7 +37,7 @@ class PipelineEnvironment:
         return PipelineObservation(
             pipeline=obs["pipeline"],
             error=obs.get("error"),
-            schema_state=obs.get("schema", {}),
+            schema_state=obs.get("schema_state", {}),
             issues_remaining=obs.get("issues_remaining", 0),
             reward=0.0,
             done=False,
@@ -74,7 +74,7 @@ class PipelineEnvironment:
         return PipelineObservation(
             pipeline=obs["pipeline"],
             error=obs.get("error"),
-            schema_state=obs.get("schema", {}),
+            schema_state=obs.get("schema_state", {}),
             issues_remaining=obs.get("issues_remaining", 0),
             reward=round(reward, 4),
             done=done,

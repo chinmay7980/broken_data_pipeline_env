@@ -32,6 +32,10 @@ from models import (
     RawCodeRequest,
     RawCodeResponse,
     CodeGenRequest,
+    RunPipelineRequest,
+    RunPipelineResponse,
+    RunPipelineStepInfo,
+    RunPipelineSummary,
 )
 from server.pipeline_environment import PipelineEnvironment
 from agent import PipelineFixerAgent
@@ -145,6 +149,13 @@ async def state() -> PipelineState:
 async def agent_next_action() -> Dict[str, str]:
     """Ask the loaded LLM agent for the next action to fix the pipeline."""
     from tasks.tasks import get_task_data
+    from agent import API_KEY
+    
+    if not API_KEY:
+        raise HTTPException(
+            status_code=503, 
+            detail="HF_TOKEN or API_KEY environment variable is not set. The LLM Auto-Fix agent is unavailable."
+        )
     
     task_id = env.state.task_id
     if not task_id:
@@ -193,6 +204,93 @@ async def generate_code(request: CodeGenRequest) -> Dict[str, str]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM code gen failed: {str(e)}")
 
+
+# ──────────────────────────────────────────────────────────────────────
+# Headless Evaluation API
+# ──────────────────────────────────────────────────────────────────────
+
+@app.post("/run-pipeline", response_model=RunPipelineResponse)
+async def run_pipeline_endpoint(request: RunPipelineRequest) -> RunPipelineResponse:
+    """Headless API evaluating a custom pipeline using a programmatic RL agent loop."""
+    from env.pipeline_env import DataPipelineEnv
+    from agent import RuleBasedAgent
+    from core.rules import sort_by_category
+
+    # Convert schema if list
+    schema_val = request.schema_def
+    if isinstance(schema_val, list):
+        schema_dict = {str(col): "str" for col in schema_val}
+    elif isinstance(schema_val, dict):
+        schema_dict = {str(k): str(v) for k, v in schema_val.items()}
+    else:
+        raise HTTPException(status_code=400, detail="Schema must be a list or dictionary.")
+
+    # Sort to determine a baseline correct_pipeline if none is provided
+    try:
+        correct_pipe = request.correct_pipeline
+        if not correct_pipe:
+            correct_pipe = sort_by_category(request.pipeline)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to infer correct pipeline: {str(e)}")
+
+    # Init env
+    try:
+        env_instance = DataPipelineEnv(
+            pipeline=request.pipeline,
+            schema=schema_dict,
+            correct_pipeline=correct_pipe,
+            max_steps=15
+        )
+        obs = env_instance.reset()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Environment initialization failed: {str(e)}")
+
+    agent = RuleBasedAgent(correct_pipeline=correct_pipe)
+
+    steps_trace = []
+    total_reward = 0.0
+    steps = 0
+    done = False
+    
+    last_info = None
+    last_reward = 0.0
+
+    try:
+        while not done and steps < 15:
+            action = agent.get_action(obs, steps, last_info, last_reward, done)
+            obs, reward, done, info = env_instance.step(action)
+            steps += 1
+            total_reward += reward
+
+            steps_trace.append(RunPipelineStepInfo(
+                step_number=steps,
+                action=action,
+                reward=round(reward, 4),
+                issue_detected=info.get("issue_detected"),
+                fix_applied=info.get("fix_applied"),
+                pipeline_state=[{"op": s["op"], "params": s.get("params", {})} for s in obs["pipeline"]]
+            ))
+
+            last_info = info
+            last_reward = reward
+
+        success = info.get("pipeline_correct", False) if last_info else False
+        initial_issues = env_instance._initial_issue_count
+        final_issues = obs.get("issues_remaining", 0)
+        issues_fixed = max(0, initial_issues - final_issues)
+
+        return RunPipelineResponse(
+            steps=steps_trace,
+            summary=RunPipelineSummary(
+                total_steps=steps,
+                total_reward=round(total_reward, 4),
+                issues_fixed=issues_fixed,
+                success=success
+            )
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Runtime error during RL episode: {str(e)}")
 
 # ──────────────────────────────────────────────────────────────────────
 # Direct execution

@@ -1,0 +1,19 @@
+{
+  "schema": {
+    "user_id": "int",
+    "name": "str",
+    "purchase_amt": "str"
+  },
+  "broken_pipeline": [
+    {"op": "load_csv", "params": {"file": "data.csv"}},
+    {"op": "cast_type", "params": {"column": "purchase_amount", "to": "float"}},
+    {"op": "filter_rows", "params": {"column": "purchase_amt", "condition": ">", "value": "10.0"}},
+    {"op": "save_output", "params": {"format": "parquet"}}
+  ],
+  "correct_pipeline": [
+    {"op": "load_csv", "params": {"file": "data.csv"}},
+    {"op": "cast_type", "params": {"column": "purchase_amt", "to": "float"}},
+    {"op": "filter_rows", "params": {"column": "purchase_amt", "condition": ">", "value": "10.0"}},
+    {"op": "save_output", "params": {"format": "parquet"}}
+  ]
+}
