@@ -7,14 +7,18 @@ name = "pipeline-fixer-rl"
 version = "1.0.0"
 description = "An OpenEnv-compatible RL environment for pipeline repair."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.104.0",
     "uvicorn>=0.24.0",
     "pydantic>=2.0.0",
     "requests>=2.31.0",
-    "openai>=1.0.0"
+    "openai>=1.0.0",
+    "openenv-core>=0.2.0"
 ]
+
+[project.scripts]
+server = "server.app:main"
 
 [project.urls]
 "Homepage" = "https://huggingface.co/spaces/Chinmay2005/broken_pipeline_fixer"
