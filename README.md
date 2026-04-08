@@ -1,3 +1,12 @@
+---
+title: Broken Pipeline Fixer
+emoji: 🔧
+colorFrom: purple
+colorTo: pink
+sdk: docker
+pinned: false
+---
+
 <div align="center">
   <h1>🔧 Broken Data Pipeline Fixer</h1>
   <p>An OpenEnv-compatible reinforcement learning environment for repairing broken data pipelines.</p>
