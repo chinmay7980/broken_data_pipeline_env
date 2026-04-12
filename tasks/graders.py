@@ -33,14 +33,16 @@ def grade_episode(
     )
     execution = _score_execution(final_pipeline, initial_schema)
 
-    score = (
+    raw = (
         0.40 * correctness
         + 0.30 * efficiency
         + 0.15 * issues_resolved
         + 0.15 * execution
     )
 
-    return round(min(max(score, 0.0), 1.0), 4)
+    # Strict (0.001, 0.999) envelope — guarantees the score is NEVER
+    # exactly 0.0 or 1.0, satisfying grader strict-bounds checks.
+    return round(0.001 + 0.998 * min(1.0, max(0.0, raw)), 4)
 
 
 def _score_correctness(final: List[Dict], correct: List[Dict]) -> float:

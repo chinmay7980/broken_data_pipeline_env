@@ -4,18 +4,28 @@ Inference Script — Broken Data Pipeline Fixer
 ===================================
 Runs a full episode of pipeline repair automatically.
 
-If HF_TOKEN is set, it will use the LLM-based PipelineFixerAgent.
-If HF_TOKEN is NOT set, it gracefully falls back to the deterministic RuleBasedAgent
+Supports multiple LLM providers (auto-detected):
+  - OpenAI   (OPENAI_API_KEY)
+  - HuggingFace (HF_TOKEN)
+  - Groq     (GROQ_API_KEY)
+  - Gemini   (GEMINI_API_KEY)
+
+If no API key is set, gracefully falls back to the deterministic RuleBasedAgent
 so the environment can be tested locally out-of-the-box.
 
 Supports providing custom broken pipelines via JSON using the `--input` argument!
+
+Follows the OpenEnv standard logging format strictly:
+  [START] task=<task> env=<env> model=<model>
+  [STEP]  step=<n> action=<action> reward=<r> done=<bool> error=<err>
+  [END]   success=<bool> steps=<n> score=<s> rewards=<csv>
 """
 
 import sys
 import os
 import json
 import argparse
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from env.pipeline_env import DataPipelineEnv
 from tasks.tasks import get_task_data, list_tasks
@@ -25,22 +35,44 @@ from agent import PipelineFixerAgent, RuleBasedAgent, API_KEY, MODEL_NAME
 BENCHMARK = "broken_pipeline_fixer"
 
 
+# ── Strict OpenEnv Logging Format ──────────────────────────────────────────
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val  = str(done).lower()
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
+    )
+
+
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards) if rewards else "0.00"
+    print(
+        f"[END] success={str(success).lower()} steps={steps} score={score:.4f} rewards={rewards_str}",
+        flush=True,
+    )
+
+
+# ── Episode Runner ─────────────────────────────────────────────────────────
 def run_episode(env: DataPipelineEnv, correct_pipeline: List[Dict], initial_schema: Dict[str, str], task_id: str) -> float:
     """Core RL loop for a given initialized environment."""
     obs = env.reset()
-    
-    print(f"\n" + "="*60)
-    print(f"[START] task={task_id} env={BENCHMARK}")
-    
+
+    model_label = MODEL_NAME if API_KEY else "RuleBasedAgent"
+    log_start(task=task_id, env=BENCHMARK, model=model_label)
+
     if API_KEY:
-        print(f"[INFO]  Agent: LLM ({MODEL_NAME})")
+        print(f"[INFO]  Agent: LLM ({MODEL_NAME})", file=sys.stderr)
         agent = PipelineFixerAgent(correct_pipeline=correct_pipeline)
     else:
-        print(f"[INFO]  Agent: RuleBasedAgent (Fallback)")
+        print(f"[INFO]  Agent: RuleBasedAgent (Fallback)", file=sys.stderr)
         agent = RuleBasedAgent(correct_pipeline=correct_pipeline)
 
-    print(f"[INFO]  Initial Issues: {env._initial_issue_count}")
-    print("="*60)
+    print(f"[INFO]  Initial Issues: {env._initial_issue_count}", file=sys.stderr)
 
     rewards: List[float] = []
     steps = 0
@@ -59,14 +91,12 @@ def run_episode(env: DataPipelineEnv, correct_pipeline: List[Dict], initial_sche
             steps += 1
             rewards.append(reward)
 
-            error = "null"
+            # Determine error for logging
+            error: Optional[str] = None
             if info.get("action_type") == "invalid":
-                error = info.get("action_result", {}).get("error", "invalid_action").replace(" ", "_").strip()
+                error = info.get("action_result", {}).get("error", "invalid_action")
 
-            print(
-                f"[STEP {steps:02d}] action={action:<40} \n"
-                f"          reward={reward:+.2f} | issues_left={info['remaining_issues']} | done={'true ' if done else 'false'} "
-            )
+            log_step(step=steps, action=action, reward=reward, done=done, error=error)
 
             last_info = info
             last_reward = reward
@@ -85,28 +115,15 @@ def run_episode(env: DataPipelineEnv, correct_pipeline: List[Dict], initial_sche
         success = info.get("pipeline_correct", False)
 
     except Exception as exc:
+        print(f"[DEBUG] Episode execution failed: {exc}", file=sys.stderr)
         if steps == 0:
-            print(
-                f"[STEP 01] action=error \n"
-                f"          reward=+0.00 | issues_left=Err | done=true \n"
-                f"          error: {exc}"
-            )
+            log_step(step=1, action="error", reward=0.0, done=True, error=str(exc))
             steps = 1
             rewards = [0.0]
         score = 0.0
         success = False
 
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards) if rewards else "0.00"
-    
-    print("-" * 60)
-    print(
-        f"[END]   success={'true' if success else 'false'} \n"
-        f"        steps={steps}/{obs.get('max_steps', 10)}\n"
-        f"        score={score:.4f}/1.0000 \n"
-        f"        history=[{rewards_str}]"
-    )
-    print("=" * 60 + "\n")
-
+    log_end(success=success, steps=steps, score=score, rewards=rewards)
     return score
 
 
@@ -153,11 +170,12 @@ def main() -> None:
     args = parser.parse_args()
 
     if not API_KEY:
-        print("[WARNING] HF_TOKEN or API_KEY not set. Using RuleBasedAgent fallback.\n")
+        print("[WARNING] No API key found. Using RuleBasedAgent fallback.", file=sys.stderr)
+        print("[WARNING] Set OPENAI_API_KEY, HF_TOKEN, GROQ_API_KEY, or GEMINI_API_KEY for LLM agent.\n", file=sys.stderr)
 
     if args.input:
         score = run_custom_task(args.input)
-        print(f"### FINAL RESULTS ###")
+        print(f"\n### FINAL RESULTS ###")
         print(f"Task: Custom File   Score: {score:.4f}\n")
     else:
         scores = {}
@@ -165,7 +183,7 @@ def main() -> None:
             scores[task_id] = run_default_task(task_id)
 
         avg = sum(scores.values()) / len(scores) if scores else 0.0
-        print(f"### FINAL RESULTS ###")
+        print(f"\n### FINAL RESULTS ###")
         print(f"Average score: {avg:.4f}\n")
         for tid, sc in scores.items():
             print(f"  {tid.capitalize():<10} : {sc:.4f}")

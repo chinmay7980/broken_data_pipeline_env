@@ -4,6 +4,12 @@ Agents to autonomously fix broken data pipelines.
 Includes:
 1. PipelineFixerAgent: LLM-based agent.
 2. RuleBasedAgent: Fallback heuristic agent for local testing without an API key.
+
+Supports multiple LLM providers:
+  - OpenAI (OPENAI_API_KEY)
+  - HuggingFace (HF_TOKEN)
+  - Groq (GROQ_API_KEY)
+  - Gemini (GEMINI_API_KEY)
 """
 
 import json
@@ -12,9 +18,33 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+# ── Multi-Provider API Key Detection ──────────────────────────────────
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+HF_TOKEN       = os.getenv("HF_TOKEN")
+GROQ_API_KEY   = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+if OPENAI_API_KEY:
+    API_KEY      = OPENAI_API_KEY
+    API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+    MODEL_NAME   = os.getenv("MODEL_NAME", "gpt-4o-mini")
+elif HF_TOKEN:
+    API_KEY      = HF_TOKEN
+    API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+    MODEL_NAME   = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+elif GROQ_API_KEY:
+    API_KEY      = GROQ_API_KEY
+    API_BASE_URL = os.getenv("API_BASE_URL", "https://api.groq.com/openai/v1")
+    MODEL_NAME   = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
+elif GEMINI_API_KEY:
+    API_KEY      = GEMINI_API_KEY
+    API_BASE_URL = os.getenv("API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+    MODEL_NAME   = os.getenv("MODEL_NAME", "gemini-2.0-flash")
+else:
+    API_KEY      = os.getenv("API_KEY")
+    API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+    MODEL_NAME   = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+
 
 SYSTEM_PROMPT = """\
 You are an expert data pipeline debugging agent. Your job is to fix broken data pipelines by choosing repair actions.

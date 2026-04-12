@@ -10,6 +10,11 @@ pinned: false
 <div align="center">
   <h1>🔧 Broken Data Pipeline Fixer</h1>
   <p>An OpenEnv-compatible reinforcement learning environment for repairing broken data pipelines.</p>
+  
+  ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
+  ![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688?logo=fastapi&logoColor=white)
+  ![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-8b5cf6)
+  ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)
 </div>
 
 ## 🧠 Environment & RL Formulation
@@ -42,6 +47,13 @@ The agent repairs the pipeline using a discrete, structured action space string 
 - **`-0.10` / `-0.20`** — Inefficient or actively regressive steps.
 - **`-0.30`** — Formatting failure (hallucination).
 
+### Scoring
+All scores are bounded in the strict `(0.001, 0.999)` envelope to satisfy grader requirements:
+- **Correctness (40%)** — Does the pipeline match the correct reference?
+- **Efficiency (30%)** — How close to optimal step count?
+- **Issues Resolved (15%)** — Fraction of original issues fixed.
+- **Error-free Execution (15%)** — Does the pipeline run without errors?
+
 ---
 
 ## 🚀 Generalizability API
@@ -71,9 +83,34 @@ obs, info = env.reset()
 
 The system automatically parses structured operations, builds the step validation graph, and calculates error counts based on the custom input!
 
+### OpenEnv Async Client
+
+For integration with the OpenEnv evaluation framework, use `my_env.py`:
+
+```python
+from my_env import BrokenPipelineEnv, BrokenPipelineAction
+
+env = BrokenPipelineEnv()
+result = await env.reset()
+result = await env.step(BrokenPipelineAction(message="diagnose"))
+result = await env.step(BrokenPipelineAction(message="fix_param:1:column:purchase_amt"))
+await env.close()
+```
+
 ---
 
 ## 🧪 Running the Environment
+
+### Multi-Provider LLM Support
+
+The agent supports multiple LLM providers with automatic detection:
+
+| Provider | Environment Variable | Default Model |
+|---|---|---|
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| HuggingFace | `HF_TOKEN` | `Qwen/Qwen2.5-72B-Instruct` |
+| Groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| Gemini | `GEMINI_API_KEY` | `gemini-2.0-flash` |
 
 ### 1. Terminal Inference & Custom Verification
 
@@ -91,22 +128,14 @@ python inference.py
 > python inference.py --input input_pipeline.json
 > ```
 
-Example Output (`python inference.py --input input_pipeline.json`):
+Output follows the strict OpenEnv logging format:
 ```text
-[START] task=custom_(input_pipeline.json) env=broken_pipeline_fixer
-[INFO]  Agent: RuleBasedAgent (Fallback)
-============================================================
-[STEP 01] action=fix_param:1:column:purchase_amt         
-          reward=+1.00 | issues_left=0 | done=true  
-------------------------------------------------------------
-[END]   success=true 
-        steps=1/15
-        score=1.0000/1.0000 
-
-### FINAL RESULTS ###
-Task: Custom File   Score: 1.0000
+[START] task=easy env=broken_pipeline_fixer model=RuleBasedAgent
+[STEP] step=1 action=insert:2:rename_column:from=signup_date:to=registered reward=0.25 done=false error=null
+[STEP] step=2 action=fix_param:3:column:age reward=1.00 done=true error=null
+[END] success=true steps=2 score=0.9990 rewards=0.25,1.00
 ```
-*Note: If `HF_TOKEN` isn't set, `inference.py` gracefully falls back to a deterministic, completely free `RuleBasedAgent` to solve the pipeline deterministically!*
+*Note: If no API key is set, `inference.py` gracefully falls back to a deterministic, completely free `RuleBasedAgent` to solve the pipeline deterministically!*
 
 ### 2. Interactive Web UI
 
@@ -114,9 +143,9 @@ This project also includes a beautiful, premium Hackathon-ready **Live Demo Envi
 
 Start the server:
 ```bash
-uvicorn server.app:app --host 0.0.0.0 --port 8000 --reload
+uvicorn server.app:app --host 0.0.0.0 --port 7860 --reload
 ```
-Then visit: `http://localhost:8000/`
+Then visit: `http://localhost:7860/`
 
 ---
 
@@ -143,7 +172,7 @@ For hackathon judging and external evaluation, the system exposes a seamless RES
 
 **Curl Example**:
 ```bash
-curl -X POST http://localhost:8000/run-pipeline \
+curl -X POST http://localhost:7860/run-pipeline \
      -H "Content-Type: application/json" \
      -d '{
        "pipeline": [
@@ -181,6 +210,41 @@ curl -X POST http://localhost:8000/run-pipeline \
 
 ---
 
+## 🔌 Extended API Endpoints
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/health` | GET | Liveness check |
+| `/reset` | POST | Start a new episode |
+| `/step` | POST | Execute one action |
+| `/state` | GET | Current environment state |
+| `/metadata` | GET | Environment metadata for discovery |
+| `/schema` | GET | Pydantic JSON schemas |
+| `/mcp` | POST | MCP protocol stub |
+| `/dashboard` | GET | Episode monitoring snapshot |
+| `/agent/next_action` | GET | LLM agent decision |
+| `/run-pipeline` | POST | Headless evaluation |
+| `/upload_custom` | POST | Custom pipeline upload |
+| `/parse_to_pipeline` | POST | LLM code-to-pipeline parser |
+| `/generate_code` | POST | Pipeline-to-code generator |
+
+---
+
+## ✅ Submission Validation
+
+Run the built-in validator before submitting:
+
+```bash
+./validate-submission.sh https://your-space.hf.space .
+```
+
+This performs 3 checks:
+1. **API Ping** — Tests `/reset` endpoint is live
+2. **Docker Build** — Verifies container builds successfully
+3. **OpenEnv Validate** — Runs `openenv validate` linting
+
+---
+
 ## ⚙️ Project Structure
 - `env/` : `DataPipelineEnv` (Gym-like structure)
 - `core/` : Internal pipeline runner, evaluator, and strict schema validation graph
@@ -188,3 +252,22 @@ curl -X POST http://localhost:8000/run-pipeline \
 - `server/` : OpenEnv FastAPI bindings and REST endpoints
 - `static/` : Interactive front-end application
 - `agent.py`: LLM agent logic and RuleBasedAgent implementation logic
+- `inference.py`: Multi-provider inference script with OpenEnv logging
+- `my_env.py`: Async OpenEnv client wrapper
+- `validate-submission.sh`: Submission validator script
+- `models.py`: Pydantic data models for all API surfaces
+
+## Setup
+```bash
+# Docker
+docker build -t broken-pipeline-fixer .
+docker run -p 7860:7860 broken-pipeline-fixer
+
+# Local
+pip install -r requirements.txt
+uvicorn server.app:app --host 0.0.0.0 --port 7860 --reload
+
+# Inference
+export HF_TOKEN=your_token  # or OPENAI_API_KEY, GROQ_API_KEY, GEMINI_API_KEY
+python inference.py
+```

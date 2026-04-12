@@ -3,8 +3,35 @@ name: broken_pipeline_fixer
 type: space
 runtime: fastapi
 app: server.app:app
-port: 8000
+port: 7860
 version: "1.0.0"
+author: "Team Pipeline Fixer"
 description: >
   An OpenEnv-compatible RL environment for learning to repair
   broken data pipelines through sequential decision-making.
+  The agent analyses multi-step ETL workflows, identifies structural
+  failures (missing steps, wrong order, corrupted parameters), and
+  applies corrective actions to restore pipeline integrity.
+tasks:
+  - easy
+  - medium
+  - hard
+observation_space:
+  type: dict
+  keys:
+    pipeline:
+      type: array
+      description: "List of pipeline step dicts with op, params, status, error"
+    schema_state:
+      type: dict
+      description: "Column-name to column-type mapping at point of failure"
+    error:
+      type: string
+      description: "First failing step error message, or null"
+    issues_remaining:
+      type: integer
+      description: "Count of structural issues vs correct pipeline"
+action_space:
+  type: string
+  description: "diagnose | swap:<i>:<j> | insert:<pos>:<op>:<k=v> | remove:<pos> | fix_param:<idx>:<key>:<val> | reorder"
+reward_range: [-0.30, 1.00]
